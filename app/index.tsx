@@ -50,9 +50,13 @@ const theme = {
 interface Todo {
   id: string;
   text: string;
-  completed: boolean;
+  completed: boolean; // Used for non-recurring tasks
   createdAt: string;
   day: string;
+  recurring?: {
+    frequency: "daily" | "weekly" | "monthly";
+  };
+  completedInstances?: string[]; // Dates when recurring task instances are completed (yyyy-MM-dd)
 }
 
 interface DaySection {
@@ -103,6 +107,14 @@ export default function TodoApp() {
   const [addSelectedTime, setAddSelectedTime] = useState(new Date());
   const [showEditTimePicker, setShowEditTimePicker] = useState(false);
   const [editSelectedTime, setEditSelectedTime] = useState(new Date());
+  const [recurrence, setRecurrence] = useState<
+    "none" | "daily" | "weekly" | "monthly"
+  >("none");
+  const [recurrenceOpen, setRecurrenceOpen] = useState(false);
+  const [editRecurrence, setEditRecurrence] = useState<
+    "none" | "daily" | "weekly" | "monthly"
+  >("none");
+  const [editRecurrenceOpen, setEditRecurrenceOpen] = useState(false);
 
   useEffect(() => {
     const loadTodos = async () => {
@@ -134,12 +146,34 @@ export default function TodoApp() {
       setEditText(todoToEdit.text);
       setEditDay(todoToEdit.day);
       setEditSelectedTime(parseISO(todoToEdit.createdAt));
+      setEditRecurrence(
+        todoToEdit.recurring ? todoToEdit.recurring.frequency : "none"
+      );
     }
   }, [todoToEdit]);
 
   const getDateForDay = (day: string) => {
     const dayIndex = DAYS.indexOf(day);
     return addDays(startOfWeek(currentDate, { weekStartsOn: 1 }), dayIndex);
+  };
+
+  const shouldDisplayTodo = (todo: Todo, date: Date): boolean => {
+    const todoDate = parseISO(todo.createdAt);
+    if (!todo.recurring) {
+      return format(todoDate, "yyyy-MM-dd") === format(date, "yyyy-MM-dd");
+    } else {
+      const frequency = todo.recurring.frequency;
+      if (frequency === "daily") {
+        return true; // Appears every day
+      } else if (frequency === "weekly") {
+        const dateDayIndex = (getDay(date) + 6) % 7; // 0 = Monday, 6 = Sunday
+        const dateDayName = DAYS[dateDayIndex];
+        return dateDayName === todo.day;
+      } else if (frequency === "monthly") {
+        return todoDate.getDate() === date.getDate(); // Same day of the month
+      }
+      return false;
+    }
   };
 
   const addTodo = () => {
@@ -158,9 +192,11 @@ export default function TodoApp() {
         completed: false,
         createdAt: fullDate.toISOString(),
         day: selectedDay,
+        ...(recurrence !== "none" && { recurring: { frequency: recurrence } }),
       };
       setTodos((prevTodos) => [...prevTodos, newTodoItem]);
       setNewTodo("");
+      setRecurrence("none"); // Reset recurrence
       setIsAddModalOpen(false);
       setExpandedSections(
         DAYS.reduce((acc, day) => {
@@ -171,11 +207,31 @@ export default function TodoApp() {
     }
   };
 
-  const toggleTodo = (todoId: string) => {
+  const toggleTodo = (todoId: string, dateStr: string) => {
     setTodos((prevTodos) =>
-      prevTodos.map((todo) =>
-        todo.id === todoId ? { ...todo, completed: !todo.completed } : todo
-      )
+      prevTodos.map((todo) => {
+        if (todo.id === todoId) {
+          if (!todo.recurring) {
+            return { ...todo, completed: !todo.completed };
+          } else {
+            const completedInstances = todo.completedInstances || [];
+            if (completedInstances.includes(dateStr)) {
+              return {
+                ...todo,
+                completedInstances: completedInstances.filter(
+                  (d) => d !== dateStr
+                ),
+              };
+            } else {
+              return {
+                ...todo,
+                completedInstances: [...completedInstances, dateStr],
+              };
+            }
+          }
+        }
+        return todo;
+      })
     );
   };
 
@@ -196,6 +252,9 @@ export default function TodoApp() {
             text: newText,
             day: newDay,
             createdAt: newFullDate.toISOString(),
+            ...(editRecurrence !== "none"
+              ? { recurring: { frequency: editRecurrence } }
+              : { recurring: undefined, completedInstances: undefined }), // Reset instances if switching to non-recurring
           };
         }
         return todo;
@@ -277,19 +336,6 @@ export default function TodoApp() {
     setIsEditModalOpen(true);
   };
 
-  const filteredTodos = useMemo(() => {
-    switch (filter) {
-      case "All":
-        return todos;
-      case "Incomplete":
-        return todos.filter((todo) => !todo.completed);
-      case "Completed":
-        return todos.filter((todo) => todo.completed);
-      default:
-        return todos;
-    }
-  }, [todos, filter]);
-
   interface FilterButtonProps {
     label: string;
     isActive: boolean;
@@ -314,23 +360,31 @@ export default function TodoApp() {
   const sections = useMemo(() => {
     return DAYS.map((day) => {
       const sectionDate = getDateForDay(day);
+      const dayTodos = todos.filter((todo) =>
+        shouldDisplayTodo(todo, sectionDate)
+      );
+      const filteredDayTodos = dayTodos.filter((todo) => {
+        const isCompleted = todo.recurring
+          ? (todo.completedInstances || []).includes(
+              format(sectionDate, "yyyy-MM-dd")
+            )
+          : todo.completed;
+        if (filter === "All") return true;
+        if (filter === "Incomplete") return !isCompleted;
+        if (filter === "Completed") return isCompleted;
+        return true;
+      });
       return {
         day,
         date: sectionDate,
-        todos: filteredTodos
-          .filter(
-            (todo) =>
-              format(parseISO(todo.createdAt), "yyyy-MM-dd") ===
-              format(sectionDate, "yyyy-MM-dd")
-          )
-          .sort(
-            (a, b) =>
-              parseISO(a.createdAt).getTime() - parseISO(b.createdAt).getTime()
-          ),
+        todos: filteredDayTodos.sort(
+          (a, b) =>
+            parseISO(a.createdAt).getTime() - parseISO(b.createdAt).getTime()
+        ),
         expanded: expandedSections[day],
       };
     });
-  }, [filteredTodos, expandedSections, currentDate]);
+  }, [todos, filter, expandedSections, currentDate]);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -480,6 +534,39 @@ export default function TodoApp() {
                 {format(addSelectedTime, "hh:mm a")}
               </Text>
             </Pressable>
+            <Pressable
+              style={styles.daySelector}
+              onPress={() => setRecurrenceOpen(!recurrenceOpen)}
+              accessibilityLabel="Select recurrence"
+            >
+              <Text style={styles.daySelectorText}>
+                {recurrence === "none"
+                  ? "No recurrence"
+                  : recurrence.charAt(0).toUpperCase() + recurrence.slice(1)}
+              </Text>
+            </Pressable>
+            {recurrenceOpen && (
+              <View style={styles.daySelectDropdown}>
+                {["none", "daily", "weekly", "monthly"].map((option) => (
+                  <Pressable
+                    key={option}
+                    style={styles.daySelectItem}
+                    onPress={() => {
+                      setRecurrence(
+                        option as "none" | "daily" | "weekly" | "monthly"
+                      );
+                      setRecurrenceOpen(false);
+                    }}
+                  >
+                    <Text style={styles.daySelectItemText}>
+                      {option === "none"
+                        ? "No recurrence"
+                        : option.charAt(0).toUpperCase() + option.slice(1)}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+            )}
             {Platform.OS === "ios" && showAddTimePicker && (
               <Modal
                 transparent={true}
@@ -593,6 +680,40 @@ export default function TodoApp() {
                 {format(editSelectedTime, "hh:mm a")}
               </Text>
             </Pressable>
+            <Pressable
+              style={styles.daySelector}
+              onPress={() => setEditRecurrenceOpen(!editRecurrenceOpen)}
+              accessibilityLabel="Select recurrence"
+            >
+              <Text style={styles.daySelectorText}>
+                {editRecurrence === "none"
+                  ? "No recurrence"
+                  : editRecurrence.charAt(0).toUpperCase() +
+                    editRecurrence.slice(1)}
+              </Text>
+            </Pressable>
+            {editRecurrenceOpen && (
+              <View style={styles.daySelectDropdown}>
+                {["none", "daily", "weekly", "monthly"].map((option) => (
+                  <Pressable
+                    key={option}
+                    style={styles.daySelectItem}
+                    onPress={() => {
+                      setEditRecurrence(
+                        option as "none" | "daily" | "weekly" | "monthly"
+                      );
+                      setEditRecurrenceOpen(false);
+                    }}
+                  >
+                    <Text style={styles.daySelectItemText}>
+                      {option === "none"
+                        ? "No recurrence"
+                        : option.charAt(0).toUpperCase() + option.slice(1)}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+            )}
             {Platform.OS === "ios" && showEditTimePicker && (
               <Modal
                 transparent={true}
@@ -743,20 +864,26 @@ export default function TodoApp() {
 
 interface TodoItemProps {
   todo: Todo;
-  onToggle: (id: string) => void;
+  date: Date; // Add date prop
+  onToggle: (id: string, date: string) => void; // Update signature
   onDelete: (todo: Todo) => void;
   onEdit: (todo: Todo) => void;
 }
 
 const TodoItem: React.FC<TodoItemProps> = ({
   todo,
+  date,
   onToggle,
   onDelete,
   onEdit,
 }) => {
+  const isCompleted = todo.recurring
+    ? (todo.completedInstances || []).includes(format(date, "yyyy-MM-dd"))
+    : todo.completed;
+
   const handleTodoToggle = (e: any) => {
     e.stopPropagation();
-    onToggle(todo.id);
+    onToggle(todo.id, format(date, "yyyy-MM-dd"));
   };
 
   const handleEditPress = (e: any) => {
@@ -776,22 +903,32 @@ const TodoItem: React.FC<TodoItemProps> = ({
         style={{
           padding: 8,
           borderWidth: 1,
-          borderColor: todo.completed ? "transparent" : theme.secondaryText,
+          borderColor: isCompleted ? "transparent" : theme.secondaryText,
           borderRadius: 4,
         }}
       >
         <Checkbox
-          value={todo.completed}
-          color={todo.completed ? theme.primary : undefined}
+          value={isCompleted}
+          color={isCompleted ? theme.primary : undefined}
         />
       </TouchableOpacity>
       <View style={{ flex: 1 }}>
         <Pressable style={{ flex: 1 }} onPress={handleTodoToggle}>
-          <Text
-            style={todo.completed ? styles.todoTextCompleted : styles.todoText}
-          >
-            {todo.text}
-          </Text>
+          <View style={{ flexDirection: "row", alignItems: "center" }}>
+            <Text
+              style={isCompleted ? styles.todoTextCompleted : styles.todoText}
+            >
+              {todo.text}
+            </Text>
+            {todo.recurring && (
+              <Ionicons
+                name="repeat"
+                size={16}
+                color={theme.secondaryText}
+                style={{ marginLeft: 4 }}
+              />
+            )}
+          </View>
           <Text style={styles.todoTime}>
             {format(parseISO(todo.createdAt), "hh:mm a")}
           </Text>
@@ -823,7 +960,7 @@ interface DaySectionProps {
   onToggle: () => void;
   onEdit: (todo: Todo) => void;
   onDelete: (todo: Todo) => void;
-  onToggleTodo: (id: string) => void;
+  onToggleTodo: (id: string, date: string) => void; // Update signature
 }
 
 const DaySection: React.FC<DaySectionProps> = ({
@@ -853,8 +990,9 @@ const DaySection: React.FC<DaySectionProps> = ({
         {todos.length > 0 ? (
           todos.map((todo) => (
             <TodoItem
-              key={todo.id}
+              key={todo.id + "_" + format(date, "yyyy-MM-dd")} // Unique key per instance
               todo={todo}
+              date={date}
               onToggle={onToggleTodo}
               onDelete={onDelete}
               onEdit={onEdit}

@@ -11,7 +11,6 @@ import {
   Modal,
   LayoutAnimation,
   UIManager,
-  Switch,
   StyleSheet,
 } from "react-native";
 import { StatusBar } from "expo-status-bar";
@@ -23,7 +22,6 @@ import {
   endOfWeek,
   addWeeks,
   subWeeks,
-  isSameWeek,
   parseISO,
   getDay,
   addDays,
@@ -77,7 +75,6 @@ const DAYS = [
 export default function TodoApp() {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [calendarDate, setCalendarDate] = useState(new Date());
-  const [temperature] = useState(64);
   const [newTodo, setNewTodo] = useState("");
   const [selectedDay, setSelectedDay] = useState("MONDAY");
   const [todos, setTodos] = useState<Todo[]>([]);
@@ -99,10 +96,13 @@ export default function TodoApp() {
   const [todoToEdit, setTodoToEdit] = useState<Todo | null>(null);
   const [editText, setEditText] = useState("");
   const [editDay, setEditDay] = useState("MONDAY");
-  const [showOnlyIncomplete, setShowOnlyIncomplete] = useState(false);
   const [filter, setFilter] = useState<"All" | "Incomplete" | "Completed">(
     "All"
   );
+  const [showAddTimePicker, setShowAddTimePicker] = useState(false);
+  const [addSelectedTime, setAddSelectedTime] = useState(new Date());
+  const [showEditTimePicker, setShowEditTimePicker] = useState(false);
+  const [editSelectedTime, setEditSelectedTime] = useState(new Date());
 
   useEffect(() => {
     const loadTodos = async () => {
@@ -129,6 +129,14 @@ export default function TodoApp() {
     saveTodos();
   }, [todos]);
 
+  useEffect(() => {
+    if (todoToEdit) {
+      setEditText(todoToEdit.text);
+      setEditDay(todoToEdit.day);
+      setEditSelectedTime(parseISO(todoToEdit.createdAt));
+    }
+  }, [todoToEdit]);
+
   const getDateForDay = (day: string) => {
     const dayIndex = DAYS.indexOf(day);
     return addDays(startOfWeek(currentDate, { weekStartsOn: 1 }), dayIndex);
@@ -137,11 +145,18 @@ export default function TodoApp() {
   const addTodo = () => {
     if (newTodo.trim()) {
       const todoDate = getDateForDay(selectedDay);
+      const fullDate = new Date(todoDate);
+      fullDate.setHours(
+        addSelectedTime.getHours(),
+        addSelectedTime.getMinutes(),
+        0,
+        0
+      );
       const newTodoItem: Todo = {
         id: Date.now().toString(),
         text: newTodo,
         completed: false,
-        createdAt: todoDate.toISOString(),
+        createdAt: fullDate.toISOString(),
         day: selectedDay,
       };
       setTodos((prevTodos) => [...prevTodos, newTodoItem]);
@@ -168,17 +183,19 @@ export default function TodoApp() {
     setTodos((prevTodos) =>
       prevTodos.map((todo) => {
         if (todo.id === id) {
-          const originalDate = parseISO(todo.createdAt);
-          const originalWeekStart = startOfWeek(originalDate, {
-            weekStartsOn: 1,
-          });
-          const newDayIndex = DAYS.indexOf(newDay);
-          const newDate = addDays(originalWeekStart, newDayIndex);
+          const newDayDate = getDateForDay(newDay);
+          const newFullDate = new Date(newDayDate);
+          newFullDate.setHours(
+            editSelectedTime.getHours(),
+            editSelectedTime.getMinutes(),
+            0,
+            0
+          );
           return {
             ...todo,
             text: newText,
             day: newDay,
-            createdAt: newDate.toISOString(),
+            createdAt: newFullDate.toISOString(),
           };
         }
         return todo;
@@ -300,11 +317,16 @@ export default function TodoApp() {
       return {
         day,
         date: sectionDate,
-        todos: filteredTodos.filter(
-          (todo) =>
-            format(parseISO(todo.createdAt), "yyyy-MM-dd") ===
-            format(sectionDate, "yyyy-MM-dd")
-        ),
+        todos: filteredTodos
+          .filter(
+            (todo) =>
+              format(parseISO(todo.createdAt), "yyyy-MM-dd") ===
+              format(sectionDate, "yyyy-MM-dd")
+          )
+          .sort(
+            (a, b) =>
+              parseISO(a.createdAt).getTime() - parseISO(b.createdAt).getTime()
+          ),
         expanded: expandedSections[day],
       };
     });
@@ -391,11 +413,12 @@ export default function TodoApp() {
           style={styles.fab}
           onPress={() => {
             const today = new Date();
-            const todayIndex = getDay(today); // 0 = Sunday, 1 = Monday, etc.
-            const adjustedIndex = todayIndex === 0 ? 6 : todayIndex - 1; // Maps Sunday to 6, Monday to 0, etc.
-            const currentDay = DAYS[adjustedIndex]; // Get the day string, e.g., "WEDNESDAY"
-            setSelectedDay(currentDay); // Set the preselected day
-            setIsAddModalOpen(true); // Open the modal
+            const todayIndex = getDay(today);
+            const adjustedIndex = todayIndex === 0 ? 6 : todayIndex - 1;
+            const currentDay = DAYS[adjustedIndex];
+            setSelectedDay(currentDay);
+            setAddSelectedTime(new Date()); // Reset to current time
+            setIsAddModalOpen(true);
           }}
           accessibilityLabel="Add new todo"
         >
@@ -447,6 +470,61 @@ export default function TodoApp() {
                   </Pressable>
                 ))}
               </View>
+            )}
+            <Pressable
+              style={styles.timeSelector}
+              onPress={() => setShowAddTimePicker(true)}
+              accessibilityLabel="Select time"
+            >
+              <Text style={styles.timeSelectorText}>
+                {format(addSelectedTime, "hh:mm a")}
+              </Text>
+            </Pressable>
+            {Platform.OS === "ios" && showAddTimePicker && (
+              <Modal
+                transparent={true}
+                visible={showAddTimePicker}
+                animationType="fade"
+              >
+                <View style={styles.modalOverlay}>
+                  <View style={styles.datePickerContainer}>
+                    <View style={styles.datePickerHeader}>
+                      <TouchableOpacity
+                        onPress={() => setShowAddTimePicker(false)}
+                      >
+                        <Text
+                          style={{
+                            color: theme.primary,
+                            fontSize: 16,
+                            fontWeight: "600",
+                          }}
+                        >
+                          Done
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                    <DateTimePicker
+                      value={addSelectedTime}
+                      mode="time"
+                      display="spinner"
+                      onChange={(event, date) => {
+                        if (date) setAddSelectedTime(date);
+                      }}
+                    />
+                  </View>
+                </View>
+              </Modal>
+            )}
+            {Platform.OS === "android" && showAddTimePicker && (
+              <DateTimePicker
+                value={addSelectedTime}
+                mode="time"
+                display="default"
+                onChange={(event, date) => {
+                  setShowAddTimePicker(false);
+                  if (date) setAddSelectedTime(date);
+                }}
+              />
             )}
             <View style={styles.modalButtons}>
               <TouchableOpacity
@@ -505,6 +583,61 @@ export default function TodoApp() {
                   </Pressable>
                 ))}
               </View>
+            )}
+            <Pressable
+              style={styles.timeSelector}
+              onPress={() => setShowEditTimePicker(true)}
+              accessibilityLabel="Select time"
+            >
+              <Text style={styles.timeSelectorText}>
+                {format(editSelectedTime, "hh:mm a")}
+              </Text>
+            </Pressable>
+            {Platform.OS === "ios" && showEditTimePicker && (
+              <Modal
+                transparent={true}
+                visible={showEditTimePicker}
+                animationType="fade"
+              >
+                <View style={styles.modalOverlay}>
+                  <View style={styles.datePickerContainer}>
+                    <View style={styles.datePickerHeader}>
+                      <TouchableOpacity
+                        onPress={() => setShowEditTimePicker(false)}
+                      >
+                        <Text
+                          style={{
+                            color: theme.primary,
+                            fontSize: 16,
+                            fontWeight: "600",
+                          }}
+                        >
+                          Done
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                    <DateTimePicker
+                      value={editSelectedTime}
+                      mode="time"
+                      display="spinner"
+                      onChange={(event, date) => {
+                        if (date) setEditSelectedTime(date);
+                      }}
+                    />
+                  </View>
+                </View>
+              </Modal>
+            )}
+            {Platform.OS === "android" && showEditTimePicker && (
+              <DateTimePicker
+                value={editSelectedTime}
+                mode="time"
+                display="default"
+                onChange={(event, date) => {
+                  setShowEditTimePicker(false);
+                  if (date) setEditSelectedTime(date);
+                }}
+              />
             )}
             <View style={styles.modalButtons}>
               <TouchableOpacity
@@ -652,16 +785,16 @@ const TodoItem: React.FC<TodoItemProps> = ({
           color={todo.completed ? theme.primary : undefined}
         />
       </TouchableOpacity>
-      <Pressable
-        onPress={handleTodoToggle}
-        style={{ flex: 1, paddingVertical: 8 }}
-      >
+      <View style={{ flex: 1 }}>
         <Text
           style={todo.completed ? styles.todoTextCompleted : styles.todoText}
         >
           {todo.text}
         </Text>
-      </Pressable>
+        <Text style={styles.todoTime}>
+          {format(parseISO(todo.createdAt), "hh:mm a")}
+        </Text>
+      </View>
       <TouchableOpacity
         style={styles.deleteButton}
         onPress={handleEditPress}
@@ -927,5 +1060,19 @@ const styles = StyleSheet.create({
   filterText: {
     color: theme.text,
     fontWeight: "600",
+  },
+  timeSelector: {
+    borderWidth: 1,
+    borderColor: theme.secondaryText,
+    borderRadius: 4,
+    padding: 12,
+    marginBottom: 12,
+  },
+  timeSelectorText: { color: theme.text },
+  todoTime: {
+    fontSize: 12,
+    color: theme.secondaryText,
+    marginTop: 4,
+    marginLeft: 8,
   },
 });

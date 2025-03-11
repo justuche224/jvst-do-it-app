@@ -340,7 +340,14 @@ export default function TodoApp() {
         </ScrollView>
         <TouchableOpacity
           style={styles.fab}
-          onPress={() => setIsAddModalOpen(true)}
+          onPress={() => {
+            const today = new Date();
+            const todayIndex = getDay(today); // 0 = Sunday, 1 = Monday, etc.
+            const adjustedIndex = todayIndex === 0 ? 6 : todayIndex - 1; // Maps Sunday to 6, Monday to 0, etc.
+            const currentDay = DAYS[adjustedIndex]; // Get the day string, e.g., "WEDNESDAY"
+            setSelectedDay(currentDay); // Set the preselected day
+            setIsAddModalOpen(true); // Open the modal
+          }}
           accessibilityLabel="Add new todo"
         >
           <Ionicons name="add" size={24} color="#ffffff" />

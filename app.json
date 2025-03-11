@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "jvst-do-it",
+    "name": "Jvst do it!",
     "slug": "jvst-do-it",
     "version": "0.1.0",
     "orientation": "portrait",
@@ -19,7 +19,7 @@
         "backgroundImage": "./assets/icons/android/res/mipmap-xxxhdpi/ic_launcher_background.png",
         "backgroundColor": "#ffffff"
       },
-      "package": "com.jvst-tech.todo"
+      "package": "com.justuche224.jvstdoit"
     },
     "web": {
       "bundler": "metro",

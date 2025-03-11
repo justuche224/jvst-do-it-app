@@ -100,6 +100,9 @@ export default function TodoApp() {
   const [editText, setEditText] = useState("");
   const [editDay, setEditDay] = useState("MONDAY");
   const [showOnlyIncomplete, setShowOnlyIncomplete] = useState(false);
+  const [filter, setFilter] = useState<"All" | "Incomplete" | "Completed">(
+    "All"
+  );
 
   useEffect(() => {
     const loadTodos = async () => {
@@ -144,10 +147,12 @@ export default function TodoApp() {
       setTodos((prevTodos) => [...prevTodos, newTodoItem]);
       setNewTodo("");
       setIsAddModalOpen(false);
-      setExpandedSections((prev) => ({
-        ...prev,
-        [selectedDay]: true,
-      }));
+      setExpandedSections(
+        DAYS.reduce((acc, day) => {
+          acc[day] = day === selectedDay;
+          return acc;
+        }, {} as Record<string, boolean>)
+      );
     }
   };
 
@@ -250,14 +255,38 @@ export default function TodoApp() {
   };
 
   const filteredTodos = useMemo(() => {
-    return todos.filter(
-      (todo) =>
-        isSameWeek(parseISO(todo.createdAt), currentDate, {
-          weekStartsOn: 1,
-        }) &&
-        (!showOnlyIncomplete || !todo.completed)
-    );
-  }, [todos, currentDate, showOnlyIncomplete]);
+    switch (filter) {
+      case "All":
+        return todos;
+      case "Incomplete":
+        return todos.filter((todo) => !todo.completed);
+      case "Completed":
+        return todos.filter((todo) => todo.completed);
+      default:
+        return todos;
+    }
+  }, [todos, filter]);
+
+  interface FilterButtonProps {
+    label: string;
+    isActive: boolean;
+    onPress: () => void;
+  }
+
+  const FilterButton: React.FC<FilterButtonProps> = ({
+    label,
+    isActive,
+    onPress,
+  }) => (
+    <TouchableOpacity
+      style={[styles.filterButton, isActive && styles.activeFilter]}
+      onPress={onPress}
+    >
+      <Text style={[styles.filterText, isActive && styles.activeFilterText]}>
+        {label}
+      </Text>
+    </TouchableOpacity>
+  );
 
   const sections = useMemo(() => {
     return DAYS.map((day) => ({
@@ -314,14 +343,21 @@ export default function TodoApp() {
               />
             </TouchableOpacity>
           </View>
-          <View style={styles.incompleteSwitchContainer}>
-            <Text style={styles.incompleteSwitchText}>Incomplete only</Text>
-            <Switch
-              value={showOnlyIncomplete}
-              onValueChange={setShowOnlyIncomplete}
-              trackColor={{ false: theme.separator, true: theme.primary }}
-              thumbColor={showOnlyIncomplete ? "#ffffff" : theme.secondaryText}
-              accessibilityLabel="Toggle incomplete only"
+          <View style={styles.filterContainer}>
+            <FilterButton
+              label="All"
+              isActive={filter === "All"}
+              onPress={() => setFilter("All")}
+            />
+            <FilterButton
+              label="Incomplete"
+              isActive={filter === "Incomplete"}
+              onPress={() => setFilter("Incomplete")}
+            />
+            <FilterButton
+              label="Completed"
+              isActive={filter === "Completed"}
+              onPress={() => setFilter("Completed")}
             />
           </View>
           {sections.map((section) => (
@@ -371,6 +407,7 @@ export default function TodoApp() {
             <TextInput
               style={styles.input}
               placeholder="Enter todo text"
+              placeholderTextColor={theme.secondaryText}
               value={newTodo}
               onChangeText={setNewTodo}
               accessibilityLabel="Todo text input"
@@ -430,6 +467,7 @@ export default function TodoApp() {
               style={styles.input}
               value={editText}
               onChangeText={setEditText}
+              placeholderTextColor={theme.secondaryText}
               accessibilityLabel="Edit todo text"
             />
             <Pressable
@@ -706,7 +744,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     marginBottom: 16,
   },
-  incompleteSwitchText: { marginRight: 8, color: theme.text },
   navigationButton: { padding: 8 },
   weekText: { fontWeight: "600", fontSize: 16, color: theme.text },
   fab: {
@@ -854,5 +891,28 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "flex-end",
     marginBottom: 8,
+  },
+  filterContainer: {
+    flexDirection: "row",
+    justifyContent: "space-around",
+    marginVertical: 10,
+  },
+  filterButton: {
+    flex: 1,
+    padding: 10,
+    borderRadius: 5,
+    backgroundColor: theme.card,
+    marginHorizontal: 5,
+    alignItems: "center",
+  },
+  activeFilter: {
+    backgroundColor: theme.primary,
+  },
+  activeFilterText: {
+    color: theme.card,
+  },
+  filterText: {
+    color: theme.text,
+    fontWeight: "600",
   },
 });

@@ -786,14 +786,16 @@ const TodoItem: React.FC<TodoItemProps> = ({
         />
       </TouchableOpacity>
       <View style={{ flex: 1 }}>
-        <Text
-          style={todo.completed ? styles.todoTextCompleted : styles.todoText}
-        >
-          {todo.text}
-        </Text>
-        <Text style={styles.todoTime}>
-          {format(parseISO(todo.createdAt), "hh:mm a")}
-        </Text>
+        <Pressable style={{ flex: 1 }} onPress={handleTodoToggle}>
+          <Text
+            style={todo.completed ? styles.todoTextCompleted : styles.todoText}
+          >
+            {todo.text}
+          </Text>
+          <Text style={styles.todoTime}>
+            {format(parseISO(todo.createdAt), "hh:mm a")}
+          </Text>
+        </Pressable>
       </View>
       <TouchableOpacity
         style={styles.deleteButton}

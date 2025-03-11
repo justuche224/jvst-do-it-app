@@ -386,7 +386,7 @@ export default function TodoApp() {
           }}
           accessibilityLabel="Add new todo"
         >
-          <Ionicons name="add" size={24} color="#ffffff" />
+          <Ionicons name="add" size={24} color={theme.card} />
         </TouchableOpacity>
       </KeyboardAvoidingView>
       <Modal
@@ -831,7 +831,7 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     alignItems: "center",
   },
-  addButtonText: { color: "#ffffff", fontWeight: "600" },
+  addButtonText: { color: theme.card, fontWeight: "600" },
   deleteConfirmButton: {
     backgroundColor: theme.error,
     padding: 12,

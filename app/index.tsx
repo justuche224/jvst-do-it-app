@@ -194,16 +194,24 @@ export default function TodoApp() {
     selectedDate?: Date | undefined
   ) => {
     setShowDatePicker(false);
+
     if (selectedDate) {
       setCalendarDate(selectedDate);
       setCurrentDate(selectedDate);
+
       const dayIndex = getDay(selectedDate);
+
       const adjustedIndex = dayIndex === 0 ? 6 : dayIndex - 1;
+
       if (adjustedIndex >= 0 && adjustedIndex < DAYS.length) {
-        setExpandedSections((prev) => ({
-          ...prev,
-          [DAYS[adjustedIndex]]: true,
-        }));
+        const selectedDay = DAYS[adjustedIndex];
+
+        setExpandedSections(
+          DAYS.reduce((acc, day) => {
+            acc[day] = day === selectedDay;
+            return acc;
+          }, {} as Record<string, boolean>)
+        );
       }
     }
   };

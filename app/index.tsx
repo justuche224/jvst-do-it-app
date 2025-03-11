@@ -165,18 +165,24 @@ export default function TodoApp() {
   };
 
   const editTodo = (id: string, newText: string, newDay: string) => {
-    const newDate = getDateForDay(newDay);
     setTodos((prevTodos) =>
-      prevTodos.map((todo) =>
-        todo.id === id
-          ? {
-              ...todo,
-              text: newText,
-              day: newDay,
-              createdAt: newDate.toISOString(),
-            }
-          : todo
-      )
+      prevTodos.map((todo) => {
+        if (todo.id === id) {
+          const originalDate = parseISO(todo.createdAt);
+          const originalWeekStart = startOfWeek(originalDate, {
+            weekStartsOn: 1,
+          });
+          const newDayIndex = DAYS.indexOf(newDay);
+          const newDate = addDays(originalWeekStart, newDayIndex);
+          return {
+            ...todo,
+            text: newText,
+            day: newDay,
+            createdAt: newDate.toISOString(),
+          };
+        }
+        return todo;
+      })
     );
     setIsEditModalOpen(false);
   };
@@ -289,13 +295,20 @@ export default function TodoApp() {
   );
 
   const sections = useMemo(() => {
-    return DAYS.map((day) => ({
-      day,
-      date: getDateForDay(day),
-      todos: filteredTodos.filter((todo) => todo.day === day),
-      expanded: expandedSections[day],
-    }));
-  }, [filteredTodos, expandedSections]);
+    return DAYS.map((day) => {
+      const sectionDate = getDateForDay(day);
+      return {
+        day,
+        date: sectionDate,
+        todos: filteredTodos.filter(
+          (todo) =>
+            format(parseISO(todo.createdAt), "yyyy-MM-dd") ===
+            format(sectionDate, "yyyy-MM-dd")
+        ),
+        expanded: expandedSections[day],
+      };
+    });
+  }, [filteredTodos, expandedSections, currentDate]);
 
   return (
     <SafeAreaView style={styles.container}>

@@ -165,6 +165,36 @@ export default function TodoApp() {
     "none" | "atDue" | "30minBefore" | "1hourBefore"
   >("none");
   const [editNotificationOpen, setEditNotificationOpen] = useState(false);
+  const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+
+  const filteredTodos = useMemo(() => {
+    if (!searchQuery.trim()) return [];
+    return todos.filter((todo) =>
+      todo.text.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+  }, [todos, searchQuery]);
+
+  const handleResultClick = (todo: Todo) => {
+    // Step 1: Clear the search query
+    setSearchQuery("");
+
+    // Step 2: Close the search modal
+    setIsSearchModalOpen(false);
+
+    // Step 4: Navigate to the week of the todo's createdAt date
+    const todoDate = parseISO(todo.createdAt); // Convert createdAt string to Date object
+    const startOfTodoWeek = startOfWeek(todoDate, { weekStartsOn: 1 }); // Start of week (Monday)
+    setCurrentDate(startOfTodoWeek); // Update the app’s current week
+
+    // Steps 3 & 5: Close other sections and expand the todo’s day
+    setExpandedSections(
+      DAYS.reduce((acc: Record<string, boolean>, day) => {
+        acc[day] = day === todo.day; // true for the todo’s day, false for others
+        return acc;
+      }, {})
+    );
+  };
 
   useEffect(() => {
     const loadTodos = async () => {
@@ -585,6 +615,13 @@ export default function TodoApp() {
                 size={24}
                 color={theme.primary}
               />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.navigationButton}
+              onPress={() => setIsSearchModalOpen(true)}
+              accessibilityLabel="Open search"
+            >
+              <Ionicons name="search" size={24} color={theme.primary} />
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.navigationButton}
@@ -1110,6 +1147,83 @@ export default function TodoApp() {
           accentColor={theme.primary}
         />
       )}
+      <Modal
+        visible={isSearchModalOpen}
+        transparent={true}
+        animationType="fade"
+        statusBarTranslucent
+        onRequestClose={() => setIsSearchModalOpen(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <TouchableOpacity
+            style={StyleSheet.absoluteFill}
+            activeOpacity={1}
+            onPress={() => setIsSearchModalOpen(false)}
+          />
+          <View style={styles.searchModalContent}>
+            <Text style={styles.modalTitle}>Search Todos</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Search todos..."
+              placeholderTextColor={theme.secondaryText}
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              autoFocus={true}
+              accessibilityLabel="Search input"
+            />
+            <ScrollView style={styles.searchResultsContainer}>
+              {filteredTodos.length > 0 ? (
+                filteredTodos.map((todo) => (
+                  <Pressable
+                    key={todo.id}
+                    style={styles.searchResultItem}
+                    onPress={() => {
+                      setIsSearchModalOpen(false);
+                      setCurrentDate(parseISO(todo.createdAt));
+                      setExpandedSections({
+                        ...DAYS.reduce(
+                          (acc, d) => ({ ...acc, [d]: false }),
+                          {}
+                        ),
+                        [todo.day]: true,
+                      });
+                    }}
+                  >
+                    <Pressable
+                      onPress={() => handleResultClick(todo)}
+                      style={styles.searchResultText}
+                    >
+                      <Text style={{ color: theme.text }}>{todo.text}</Text>
+                    </Pressable>
+                    <Text style={styles.searchResultDay}>{todo.day}</Text>
+                    {todo.recurring && (
+                      <Ionicons
+                        name="repeat"
+                        size={16}
+                        color={theme.secondaryText}
+                        style={{ marginLeft: 4 }}
+                      />
+                    )}
+                  </Pressable>
+                ))
+              ) : (
+                <Text style={styles.emptySearch}>
+                  {searchQuery
+                    ? "No matching todos found"
+                    : "Enter a search term"}
+                </Text>
+              )}
+            </ScrollView>
+            <TouchableOpacity
+              style={styles.cancelButton}
+              onPress={() => setIsSearchModalOpen(false)}
+              accessibilityLabel="Close search"
+            >
+              <Text style={styles.cancelButtonText}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -1470,5 +1584,40 @@ const styles = StyleSheet.create({
     color: theme.secondaryText,
     marginTop: 4,
     marginLeft: 8,
+  },
+  searchModalContent: {
+    backgroundColor: theme.card,
+    borderRadius: 8,
+    padding: 20,
+    width: "90%",
+    maxHeight: "80%",
+    elevation: 5,
+  },
+  searchResultsContainer: {
+    maxHeight: 300,
+    marginTop: 10,
+  },
+  searchResultItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.separator,
+  },
+  searchResultText: {
+    flex: 1,
+    fontSize: 16,
+    color: theme.text,
+  },
+  searchResultDay: {
+    fontSize: 12,
+    color: theme.secondaryText,
+    marginRight: 8,
+  },
+  emptySearch: {
+    fontSize: 14,
+    color: theme.secondaryText,
+    textAlign: "center",
+    marginTop: 20,
   },
 });

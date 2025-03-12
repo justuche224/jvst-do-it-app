@@ -19,6 +19,8 @@ import DateTimePicker from "@react-native-community/datetimepicker";
 import {
   format,
   startOfWeek,
+  subMinutes,
+  subHours,
   endOfWeek,
   addWeeks,
   subWeeks,
@@ -29,12 +31,22 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import Checkbox from "expo-checkbox";
 import { SafeAreaView } from "react-native-safe-area-context";
+import * as Notifications from "expo-notifications";
+import { SchedulableTriggerInputTypes } from "expo-notifications";
 
 if (Platform.OS === "android") {
   if (UIManager.setLayoutAnimationEnabledExperimental) {
     UIManager.setLayoutAnimationEnabledExperimental(true);
   }
 }
+
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true, // Show alert even when app is open
+    shouldPlaySound: true,
+    shouldSetBadge: true,
+  }),
+});
 
 const theme = {
   primary: "#00ffff",
@@ -57,6 +69,36 @@ interface Todo {
     frequency: "daily" | "weekly" | "monthly";
   };
   completedInstances?: string[]; // Dates when recurring task instances are completed (yyyy-MM-dd)
+  notificationPreference?: "none" | "atDue" | "30minBefore" | "1hourBefore"; // User’s choice
+  notificationId?: string; // ID to manage the scheduled notification
+}
+
+async function ensureNotificationPermissions() {
+  const { status } = await Notifications.getPermissionsAsync();
+  if (status !== "granted") {
+    const { status: newStatus } = await Notifications.requestPermissionsAsync();
+    if (newStatus !== "granted") {
+      alert(
+        "Please enable notifications in your settings to receive reminders."
+      );
+      return false;
+    }
+  }
+  return true;
+}
+
+async function scheduleNotification(text: string, triggerTime: Date) {
+  const notificationId = await Notifications.scheduleNotificationAsync({
+    content: {
+      title: "Task Reminder",
+      body: `Your task "${text}" is due soon.`,
+    },
+    trigger: {
+      type: SchedulableTriggerInputTypes.DATE,
+      date: triggerTime,
+    },
+  });
+  return notificationId;
 }
 
 interface DaySection {
@@ -115,6 +157,14 @@ export default function TodoApp() {
     "none" | "daily" | "weekly" | "monthly"
   >("none");
   const [editRecurrenceOpen, setEditRecurrenceOpen] = useState(false);
+  const [notificationPreference, setNotificationPreference] = useState<
+    "none" | "atDue" | "30minBefore" | "1hourBefore"
+  >("none");
+  const [notificationOpen, setNotificationOpen] = useState(false);
+  const [editNotificationPreference, setEditNotificationPreference] = useState<
+    "none" | "atDue" | "30minBefore" | "1hourBefore"
+  >("none");
+  const [editNotificationOpen, setEditNotificationOpen] = useState(false);
 
   useEffect(() => {
     const loadTodos = async () => {
@@ -149,6 +199,9 @@ export default function TodoApp() {
       setEditRecurrence(
         todoToEdit.recurring ? todoToEdit.recurring.frequency : "none"
       );
+      setEditNotificationPreference(
+        todoToEdit.notificationPreference || "none"
+      );
     }
   }, [todoToEdit]);
 
@@ -176,7 +229,7 @@ export default function TodoApp() {
     }
   };
 
-  const addTodo = () => {
+  const addTodo = async () => {
     if (newTodo.trim()) {
       const todoDate = getDateForDay(selectedDay);
       const fullDate = new Date(todoDate);
@@ -186,6 +239,36 @@ export default function TodoApp() {
         0,
         0
       );
+      let notificationId: string | undefined;
+
+      if (notificationPreference !== "none" && recurrence === "none") {
+        const hasPermission = await ensureNotificationPermissions();
+        if (!hasPermission) {
+          setNotificationPreference("none"); // Reset preference if denied
+          return;
+        }
+
+        const dueTime = fullDate;
+        let triggerTime: Date;
+        switch (notificationPreference) {
+          case "atDue":
+            triggerTime = dueTime;
+            break;
+          case "30minBefore":
+            triggerTime = subMinutes(dueTime, 30);
+            break;
+          case "1hourBefore":
+            triggerTime = subHours(dueTime, 1);
+            break;
+          default:
+            triggerTime = dueTime;
+        }
+
+        if (triggerTime > new Date()) {
+          notificationId = await scheduleNotification(newTodo, triggerTime);
+        }
+      }
+
       const newTodoItem: Todo = {
         id: Date.now().toString(),
         text: newTodo,
@@ -193,10 +276,15 @@ export default function TodoApp() {
         createdAt: fullDate.toISOString(),
         day: selectedDay,
         ...(recurrence !== "none" && { recurring: { frequency: recurrence } }),
+        ...(notificationPreference !== "none" &&
+          recurrence === "none" && { notificationPreference }),
+        notificationId,
       };
+
       setTodos((prevTodos) => [...prevTodos, newTodoItem]);
       setNewTodo("");
-      setRecurrence("none"); // Reset recurrence
+      setRecurrence("none");
+      setNotificationPreference("none");
       setIsAddModalOpen(false);
       setExpandedSections(
         DAYS.reduce((acc, day) => {
@@ -207,58 +295,131 @@ export default function TodoApp() {
     }
   };
 
-  const toggleTodo = (todoId: string, dateStr: string) => {
-    setTodos((prevTodos) =>
-      prevTodos.map((todo) => {
-        if (todo.id === todoId) {
-          if (!todo.recurring) {
-            return { ...todo, completed: !todo.completed };
+  const toggleTodo = async (todoId: string, dateStr: string) => {
+    let updatedTodos = todos;
+    for (let i = 0; i < updatedTodos.length; i++) {
+      const todo = updatedTodos[i];
+      if (todo.id === todoId) {
+        if (!todo.recurring) {
+          const newCompleted = !todo.completed;
+          if (newCompleted && todo.notificationId) {
+            await Notifications.cancelScheduledNotificationAsync(
+              todo.notificationId
+            );
+            updatedTodos[i] = {
+              ...todo,
+              completed: newCompleted,
+              notificationId: undefined,
+            };
           } else {
-            const completedInstances = todo.completedInstances || [];
-            if (completedInstances.includes(dateStr)) {
-              return {
-                ...todo,
-                completedInstances: completedInstances.filter(
-                  (d) => d !== dateStr
-                ),
-              };
-            } else {
-              return {
-                ...todo,
-                completedInstances: [...completedInstances, dateStr],
-              };
-            }
+            updatedTodos[i] = { ...todo, completed: newCompleted };
+          }
+        } else {
+          const completedInstances = todo.completedInstances || [];
+          if (completedInstances.includes(dateStr)) {
+            updatedTodos[i] = {
+              ...todo,
+              completedInstances: completedInstances.filter(
+                (d) => d !== dateStr
+              ),
+            };
+          } else {
+            updatedTodos[i] = {
+              ...todo,
+              completedInstances: [...completedInstances, dateStr],
+            };
           }
         }
-        return todo;
-      })
-    );
+      }
+    }
+    setTodos([...updatedTodos]);
   };
 
-  const editTodo = (id: string, newText: string, newDay: string) => {
-    setTodos((prevTodos) =>
-      prevTodos.map((todo) => {
-        if (todo.id === id) {
-          const newDayDate = getDateForDay(newDay);
-          const newFullDate = new Date(newDayDate);
-          newFullDate.setHours(
-            editSelectedTime.getHours(),
-            editSelectedTime.getMinutes(),
-            0,
-            0
-          );
-          return {
-            ...todo,
-            text: newText,
-            day: newDay,
-            createdAt: newFullDate.toISOString(),
-            ...(editRecurrence !== "none"
-              ? { recurring: { frequency: editRecurrence } }
-              : { recurring: undefined, completedInstances: undefined }), // Reset instances if switching to non-recurring
-          };
+  const editTodo = async (id: string, newText: string, newDay: string) => {
+    const prevTodo = todos.find((t) => t.id === id);
+    if (!prevTodo) return;
+
+    const newDayDate = getDateForDay(newDay);
+    const newFullDate = new Date(newDayDate);
+    newFullDate.setHours(
+      editSelectedTime.getHours(),
+      editSelectedTime.getMinutes(),
+      0,
+      0
+    );
+
+    let newNotificationId: string | undefined = prevTodo.notificationId;
+
+    if (editRecurrence !== "none") {
+      if (newNotificationId) {
+        await Notifications.cancelScheduledNotificationAsync(newNotificationId);
+        newNotificationId = undefined;
+      }
+    } else {
+      const dueTimeChanged =
+        newFullDate.getTime() !== parseISO(prevTodo.createdAt).getTime();
+      const preferenceChanged =
+        editNotificationPreference !== prevTodo.notificationPreference;
+
+      if (
+        newNotificationId &&
+        (dueTimeChanged ||
+          preferenceChanged ||
+          editNotificationPreference === "none")
+      ) {
+        await Notifications.cancelScheduledNotificationAsync(newNotificationId);
+        newNotificationId = undefined;
+      }
+
+      if (editNotificationPreference !== "none") {
+        const hasPermission = await ensureNotificationPermissions();
+        if (!hasPermission) {
+          setEditNotificationPreference("none");
+          return;
         }
-        return todo;
-      })
+
+        const dueTime = newFullDate;
+        let triggerTime: Date;
+        switch (editNotificationPreference) {
+          case "atDue":
+            triggerTime = dueTime;
+            break;
+          case "30minBefore":
+            triggerTime = subMinutes(dueTime, 30);
+            break;
+          case "1hourBefore":
+            triggerTime = subHours(dueTime, 1);
+            break;
+          default:
+            triggerTime = dueTime;
+        }
+
+        if (triggerTime > new Date()) {
+          newNotificationId = await scheduleNotification(newText, triggerTime);
+        }
+      }
+    }
+
+    setTodos((prevTodos) =>
+      prevTodos.map((todo) =>
+        todo.id === id
+          ? {
+              ...todo,
+              text: newText,
+              day: newDay,
+              createdAt: newFullDate.toISOString(),
+              recurring:
+                editRecurrence !== "none"
+                  ? { frequency: editRecurrence }
+                  : undefined,
+              completedInstances:
+                editRecurrence !== "none" ? todo.completedInstances : undefined,
+              notificationPreference:
+                editRecurrence === "none" ? editNotificationPreference : "none",
+              notificationId: newNotificationId,
+            }
+          : todo
+      )
     );
     setIsEditModalOpen(false);
   };
@@ -319,8 +480,13 @@ export default function TodoApp() {
     setIsDeleteModalOpen(true);
   };
 
-  const confirmDelete = () => {
+  const confirmDelete = async () => {
     if (todoToDelete) {
+      if (todoToDelete.notificationId) {
+        await Notifications.cancelScheduledNotificationAsync(
+          todoToDelete.notificationId
+        );
+      }
       setTodos((prevTodos) =>
         prevTodos.filter((todo) => todo.id !== todoToDelete.id)
       );
@@ -567,6 +733,49 @@ export default function TodoApp() {
                 ))}
               </View>
             )}
+            {recurrence === "none" && (
+              <Pressable
+                style={styles.daySelector}
+                onPress={() => setNotificationOpen(!notificationOpen)}
+                accessibilityLabel="Select notification preference"
+              >
+                <Text style={styles.daySelectorText}>
+                  {notificationPreference === "none"
+                    ? "No notification"
+                    : notificationPreference === "atDue"
+                    ? "At due time"
+                    : notificationPreference === "30minBefore"
+                    ? "30 minutes before"
+                    : "1 hour before"}
+                </Text>
+              </Pressable>
+            )}
+            {notificationOpen && recurrence === "none" && (
+              <View style={styles.daySelectDropdown}>
+                {["none", "atDue", "30minBefore", "1hourBefore"].map(
+                  (option) => (
+                    <Pressable
+                      key={option}
+                      style={styles.daySelectItem}
+                      onPress={() => {
+                        setNotificationPreference(option as any);
+                        setNotificationOpen(false);
+                      }}
+                    >
+                      <Text style={styles.daySelectItemText}>
+                        {option === "none"
+                          ? "No notification"
+                          : option === "atDue"
+                          ? "At due time"
+                          : option === "30minBefore"
+                          ? "30 minutes before"
+                          : "1 hour before"}
+                      </Text>
+                    </Pressable>
+                  )
+                )}
+              </View>
+            )}
             {Platform.OS === "ios" && showAddTimePicker && (
               <Modal
                 transparent={true}
@@ -712,6 +921,49 @@ export default function TodoApp() {
                     </Text>
                   </Pressable>
                 ))}
+              </View>
+            )}
+            {editRecurrence === "none" && (
+              <Pressable
+                style={styles.daySelector}
+                onPress={() => setEditNotificationOpen(!editNotificationOpen)}
+                accessibilityLabel="Select notification preference"
+              >
+                <Text style={styles.daySelectorText}>
+                  {editNotificationPreference === "none"
+                    ? "No notification"
+                    : editNotificationPreference === "atDue"
+                    ? "At due time"
+                    : editNotificationPreference === "30minBefore"
+                    ? "30 minutes before"
+                    : "1 hour before"}
+                </Text>
+              </Pressable>
+            )}
+            {editNotificationOpen && editRecurrence === "none" && (
+              <View style={styles.daySelectDropdown}>
+                {["none", "atDue", "30minBefore", "1hourBefore"].map(
+                  (option) => (
+                    <Pressable
+                      key={option}
+                      style={styles.daySelectItem}
+                      onPress={() => {
+                        setEditNotificationPreference(option as any);
+                        setEditNotificationOpen(false);
+                      }}
+                    >
+                      <Text style={styles.daySelectItemText}>
+                        {option === "none"
+                          ? "No notification"
+                          : option === "atDue"
+                          ? "At due time"
+                          : option === "30minBefore"
+                          ? "30 minutes before"
+                          : "1 hour before"}
+                      </Text>
+                    </Pressable>
+                  )
+                )}
               </View>
             )}
             {Platform.OS === "ios" && showEditTimePicker && (
@@ -912,28 +1164,32 @@ const TodoItem: React.FC<TodoItemProps> = ({
           color={isCompleted ? theme.primary : undefined}
         />
       </TouchableOpacity>
-      <View style={{ flex: 1 }}>
-        <Pressable style={{ flex: 1 }} onPress={handleTodoToggle}>
-          <View style={{ flexDirection: "row", alignItems: "center" }}>
-            <Text
-              style={isCompleted ? styles.todoTextCompleted : styles.todoText}
-            >
-              {todo.text}
-            </Text>
-            {todo.recurring && (
+      <Pressable style={{ flex: 1 }} onPress={handleTodoToggle}>
+        <View style={{ flexDirection: "row", alignItems: "center" }}>
+          <Text
+            style={isCompleted ? styles.todoTextCompleted : styles.todoText}
+          >
+            {todo.text}
+          </Text>
+          {todo.notificationPreference &&
+            todo.notificationPreference !== "none" && (
               <Ionicons
-                name="repeat"
+                name="notifications-outline"
                 size={16}
                 color={theme.secondaryText}
                 style={{ marginLeft: 4 }}
               />
             )}
-          </View>
-          <Text style={styles.todoTime}>
-            {format(parseISO(todo.createdAt), "hh:mm a")}
-          </Text>
-        </Pressable>
-      </View>
+          {todo.recurring && (
+            <Ionicons
+              name="repeat"
+              size={16}
+              color={theme.secondaryText}
+              style={{ marginLeft: 4 }}
+            />
+          )}
+        </View>
+      </Pressable>
       <TouchableOpacity
         style={styles.deleteButton}
         onPress={handleEditPress}

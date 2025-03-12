@@ -1,4 +1,11 @@
-import React, { useState, useEffect, useMemo, useRef } from "react";
+import React, {
+  useState,
+  useEffect,
+  useMemo,
+  useRef,
+  createContext,
+  useContext,
+} from "react";
 import {
   View,
   Text,
@@ -14,7 +21,8 @@ import {
   StyleSheet,
   Animated,
   Easing,
-  Dimensions,
+  useColorScheme,
+  AppState,
 } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -32,7 +40,6 @@ import {
   addDays,
 } from "date-fns";
 import { Ionicons } from "@expo/vector-icons";
-import Checkbox from "expo-checkbox";
 import { SafeAreaView } from "react-native-safe-area-context";
 import * as Notifications from "expo-notifications";
 import { SchedulableTriggerInputTypes } from "expo-notifications";
@@ -52,20 +59,43 @@ Notifications.setNotificationHandler({
   }),
 });
 
-const theme = {
-  primary: "#00ffff",
-  primaryDark: "#00cccc",
-  background: "#000000",
-  card: "#121212",
-  cardHighlight: "#1e1e1e",
-  text: "#ffffff",
-  secondaryText: "#b0b0b0",
-  completed: "#505050",
-  error: "#ff5555",
-  separator: "#222222",
-  success: "#50fa7b",
-  warning: "#ffb86c",
+// Define themes for both light and dark mode
+const themes = {
+  light: {
+    primary: "#00cccc",
+    primaryDark: "#00a3a3",
+    background: "#f5f5f5",
+    card: "#ffffff",
+    cardHighlight: "#f0f0f0",
+    text: "#000000",
+    secondaryText: "#666666",
+    completed: "#aaaaaa",
+    error: "#ff3333",
+    separator: "#e0e0e0",
+    success: "#4caf50",
+    warning: "#ff9800",
+  },
+  dark: {
+    primary: "#00ffff",
+    primaryDark: "#00cccc",
+    background: "#000000",
+    card: "#121212",
+    cardHighlight: "#1e1e1e",
+    text: "#ffffff",
+    secondaryText: "#b0b0b0",
+    completed: "#505050",
+    error: "#ff5555",
+    separator: "#222222",
+    success: "#50fa7b",
+    warning: "#ffb86c",
+  },
 };
+
+// Create a context for theme
+const ThemeContext = createContext({
+  theme: themes.dark,
+  isDark: true,
+});
 
 interface Todo {
   id: string;
@@ -126,9 +156,59 @@ const DAYS = [
   "SUNDAY",
 ];
 
-const { width } = Dimensions.get("window");
+// Theme Provider component
+const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({
+  children,
+}) => {
+  const colorScheme = useColorScheme();
+  console.log(colorScheme);
+
+  const [isDark, setIsDark] = useState(colorScheme === "dark");
+  const appState = useRef(AppState.currentState);
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", (nextAppState) => {
+      if (
+        appState.current.match(/inactive|background/) &&
+        nextAppState === "active"
+      ) {
+        // App has come to the foreground, check color scheme again
+        setIsDark(colorScheme === "dark");
+      }
+      appState.current = nextAppState;
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, [colorScheme]);
+
+  // Update theme when system preference changes
+  useEffect(() => {
+    setIsDark(colorScheme === "dark");
+  }, [colorScheme]);
+
+  const theme = isDark ? themes.dark : themes.light;
+
+  return (
+    <ThemeContext.Provider value={{ theme, isDark }}>
+      {children}
+    </ThemeContext.Provider>
+  );
+};
+
+const useTheme = () => useContext(ThemeContext);
 
 export default function TodoApp() {
+  return (
+    <ThemeProvider>
+      <TodoAppContent />
+    </ThemeProvider>
+  );
+}
+
+function TodoAppContent() {
+  const { theme, isDark } = useTheme();
   const [currentDate, setCurrentDate] = useState(new Date());
   const [calendarDate, setCalendarDate] = useState(new Date());
   const [newTodo, setNewTodo] = useState("");
@@ -701,11 +781,19 @@ export default function TodoApp() {
     onPress,
   }) => (
     <TouchableOpacity
-      style={[styles.filterButton, isActive && styles.activeFilter]}
+      style={[
+        styles(theme).filterButton,
+        isActive && styles(theme).activeFilter,
+      ]}
       onPress={onPress}
       activeOpacity={0.7}
     >
-      <Text style={[styles.filterText, isActive && styles.activeFilterText]}>
+      <Text
+        style={[
+          styles(theme).filterText,
+          isActive && styles(theme).activeFilterText,
+        ]}
+      >
         {label}
       </Text>
     </TouchableOpacity>
@@ -741,36 +829,38 @@ export default function TodoApp() {
   }, [todos, filter, expandedSections, currentDate]);
 
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar style="light" />
+    <SafeAreaView style={styles(theme).container}>
+      <StatusBar style={isDark ? "light" : "dark"} />
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : "height"}
         style={{ flex: 1 }}
       >
         <ScrollView
-          style={styles.content}
+          style={styles(theme).content}
           showsVerticalScrollIndicator={false}
           onScrollBeginDrag={() => animateFab(0.8)}
           onScrollEndDrag={() => animateFab(1)}
         >
-          <View style={styles.weekNavigation}>
+          <View style={styles(theme).weekNavigation}>
             <TouchableOpacity
-              style={styles.navigationButton}
+              style={styles(theme).navigationButton}
               onPress={() => changeWeek("prev")}
               accessibilityLabel="Previous week"
             >
               <Ionicons name="chevron-back" size={24} color={theme.primary} />
             </TouchableOpacity>
             <TouchableOpacity
-              style={styles.searchButton}
+              style={styles(theme).searchButton}
               onPress={() => setIsSearchModalOpen(true)}
               accessibilityLabel="Open search"
             >
               <Ionicons name="search" size={20} color={theme.text} />
-              <Text style={styles.searchButtonText}>Search todos...</Text>
+              <Text style={styles(theme).searchButtonText}>
+                Search todos...
+              </Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={styles.navigationButton}
+              style={styles(theme).navigationButton}
               onPress={() => setShowDatePicker(true)}
               accessibilityLabel="Open calendar"
             >
@@ -781,7 +871,7 @@ export default function TodoApp() {
               />
             </TouchableOpacity>
             <TouchableOpacity
-              style={styles.navigationButton}
+              style={styles(theme).navigationButton}
               onPress={() => changeWeek("next")}
               accessibilityLabel="Next week"
             >
@@ -793,12 +883,12 @@ export default function TodoApp() {
             </TouchableOpacity>
           </View>
 
-          <Text style={styles.weekText}>
+          <Text style={styles(theme).weekText}>
             {format(startOfWeek(currentDate, { weekStartsOn: 1 }), "MMM d")} -{" "}
             {format(endOfWeek(currentDate, { weekStartsOn: 1 }), "MMM d, yyyy")}
           </Text>
 
-          <View style={styles.filterContainer}>
+          <View style={styles(theme).filterContainer}>
             <FilterButton
               label="All"
               isActive={filter === "All"}
@@ -835,14 +925,14 @@ export default function TodoApp() {
 
         <Animated.View
           style={[
-            styles.fabContainer,
+            styles(theme).fabContainer,
             {
               transform: [{ scale: fabAnim }],
             },
           ]}
         >
           <TouchableOpacity
-            style={styles.fab}
+            style={styles(theme).fab}
             onPress={() => {
               const today = new Date();
               const todayIndex = getDay(today);
@@ -882,10 +972,14 @@ export default function TodoApp() {
         statusBarTranslucent
         onRequestClose={() => setIsAddModalOpen(false)}
       >
-        <BlurView intensity={80} style={StyleSheet.absoluteFill} tint="dark">
+        <BlurView
+          intensity={100}
+          style={StyleSheet.absoluteFill}
+          tint={isDark ? "dark" : "light"}
+        >
           <Animated.View
             style={[
-              styles.modalOverlay,
+              styles(theme).modalOverlay,
               {
                 opacity: modalAnim,
                 transform: [
@@ -904,11 +998,11 @@ export default function TodoApp() {
               activeOpacity={1}
               onPress={() => setIsAddModalOpen(false)}
             />
-            <View style={styles.modalContent}>
-              <View style={styles.modalHandle} />
-              <Text style={styles.modalTitle}>Add New Todo</Text>
+            <View style={styles(theme).modalContent}>
+              <View style={styles(theme).modalHandle} />
+              <Text style={styles(theme).modalTitle}>Add New Todo</Text>
               <TextInput
-                style={styles.input}
+                style={styles(theme).input}
                 placeholder="Enter todo text"
                 placeholderTextColor={theme.secondaryText}
                 value={newTodo}
@@ -916,11 +1010,11 @@ export default function TodoApp() {
                 accessibilityLabel="Todo text input"
               />
               <Pressable
-                style={styles.daySelector}
+                style={styles(theme).daySelector}
                 onPress={() => setDaySelectOpen(!daySelectOpen)}
                 accessibilityLabel="Select day"
               >
-                <Text style={styles.daySelectorText}>{selectedDay}</Text>
+                <Text style={styles(theme).daySelectorText}>{selectedDay}</Text>
                 <Ionicons
                   name="chevron-down"
                   size={16}
@@ -928,27 +1022,27 @@ export default function TodoApp() {
                 />
               </Pressable>
               {daySelectOpen && (
-                <View style={styles.daySelectDropdown}>
+                <View style={styles(theme).daySelectDropdown}>
                   {DAYS.map((day) => (
                     <Pressable
                       key={day}
-                      style={styles.daySelectItem}
+                      style={styles(theme).daySelectItem}
                       onPress={() => {
                         setSelectedDay(day);
                         setDaySelectOpen(false);
                       }}
                     >
-                      <Text style={styles.daySelectItemText}>{day}</Text>
+                      <Text style={styles(theme).daySelectItemText}>{day}</Text>
                     </Pressable>
                   ))}
                 </View>
               )}
               <Pressable
-                style={styles.timeSelector}
+                style={styles(theme).timeSelector}
                 onPress={() => setShowAddTimePicker(true)}
                 accessibilityLabel="Select time"
               >
-                <Text style={styles.timeSelectorText}>
+                <Text style={styles(theme).timeSelectorText}>
                   {format(addSelectedTime, "hh:mm a")}
                 </Text>
                 <Ionicons
@@ -958,11 +1052,11 @@ export default function TodoApp() {
                 />
               </Pressable>
               <Pressable
-                style={styles.daySelector}
+                style={styles(theme).daySelector}
                 onPress={() => setRecurrenceOpen(!recurrenceOpen)}
                 accessibilityLabel="Select recurrence"
               >
-                <Text style={styles.daySelectorText}>
+                <Text style={styles(theme).daySelectorText}>
                   {recurrence === "none"
                     ? "No recurrence"
                     : recurrence.charAt(0).toUpperCase() + recurrence.slice(1)}
@@ -970,11 +1064,11 @@ export default function TodoApp() {
                 <Ionicons name="repeat" size={16} color={theme.secondaryText} />
               </Pressable>
               {recurrenceOpen && (
-                <View style={styles.daySelectDropdown}>
+                <View style={styles(theme).daySelectDropdown}>
                   {["none", "daily", "weekly", "monthly"].map((option) => (
                     <Pressable
                       key={option}
-                      style={styles.daySelectItem}
+                      style={styles(theme).daySelectItem}
                       onPress={() => {
                         setRecurrence(
                           option as "none" | "daily" | "weekly" | "monthly"
@@ -982,7 +1076,7 @@ export default function TodoApp() {
                         setRecurrenceOpen(false);
                       }}
                     >
-                      <Text style={styles.daySelectItemText}>
+                      <Text style={styles(theme).daySelectItemText}>
                         {option === "none"
                           ? "No recurrence"
                           : option.charAt(0).toUpperCase() + option.slice(1)}
@@ -993,11 +1087,11 @@ export default function TodoApp() {
               )}
               {recurrence === "none" && (
                 <Pressable
-                  style={styles.daySelector}
+                  style={styles(theme).daySelector}
                   onPress={() => setNotificationOpen(!notificationOpen)}
                   accessibilityLabel="Select notification preference"
                 >
-                  <Text style={styles.daySelectorText}>
+                  <Text style={styles(theme).daySelectorText}>
                     {notificationPreference === "none"
                       ? "No notification"
                       : notificationPreference === "atDue"
@@ -1014,18 +1108,18 @@ export default function TodoApp() {
                 </Pressable>
               )}
               {notificationOpen && recurrence === "none" && (
-                <View style={styles.daySelectDropdown}>
+                <View style={styles(theme).daySelectDropdown}>
                   {["none", "atDue", "30minBefore", "1hourBefore"].map(
                     (option) => (
                       <Pressable
                         key={option}
-                        style={styles.daySelectItem}
+                        style={styles(theme).daySelectItem}
                         onPress={() => {
                           setNotificationPreference(option as any);
                           setNotificationOpen(false);
                         }}
                       >
-                        <Text style={styles.daySelectItemText}>
+                        <Text style={styles(theme).daySelectItemText}>
                           {option === "none"
                             ? "No notification"
                             : option === "atDue"
@@ -1048,14 +1142,16 @@ export default function TodoApp() {
                   <BlurView
                     intensity={80}
                     style={StyleSheet.absoluteFill}
-                    tint="dark"
+                    tint={isDark ? "dark" : "light"}
                   >
-                    <View style={styles.datePickerContainer}>
-                      <View style={styles.datePickerHeader}>
+                    <View style={styles(theme).datePickerContainer}>
+                      <View style={styles(theme).datePickerHeader}>
                         <TouchableOpacity
                           onPress={() => setShowAddTimePicker(false)}
                         >
-                          <Text style={styles.datePickerDoneText}>Done</Text>
+                          <Text style={styles(theme).datePickerDoneText}>
+                            Done
+                          </Text>
                         </TouchableOpacity>
                       </View>
                       <DateTimePicker
@@ -1082,20 +1178,20 @@ export default function TodoApp() {
                   }}
                 />
               )}
-              <View style={styles.modalButtons}>
+              <View style={styles(theme).modalButtons}>
                 <TouchableOpacity
-                  style={styles.cancelButton}
+                  style={styles(theme).cancelButton}
                   onPress={() => setIsAddModalOpen(false)}
                   accessibilityLabel="Cancel"
                 >
-                  <Text style={styles.cancelButtonText}>Cancel</Text>
+                  <Text style={styles(theme).cancelButtonText}>Cancel</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
-                  style={styles.addButton}
+                  style={styles(theme).addButton}
                   onPress={addTodo}
                   accessibilityLabel="Add todo"
                 >
-                  <Text style={styles.addButtonText}>Add</Text>
+                  <Text style={styles(theme).addButtonText}>Add</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -1110,10 +1206,14 @@ export default function TodoApp() {
         animationType="none"
         statusBarTranslucent
       >
-        <BlurView intensity={80} style={StyleSheet.absoluteFill} tint="dark">
+        <BlurView
+          intensity={80}
+          style={StyleSheet.absoluteFill}
+          tint={isDark ? "dark" : "light"}
+        >
           <Animated.View
             style={[
-              styles.modalOverlay,
+              styles(theme).modalOverlay,
               {
                 opacity: modalAnim,
                 transform: [
@@ -1132,22 +1232,22 @@ export default function TodoApp() {
               activeOpacity={1}
               onPress={() => setIsEditModalOpen(false)}
             />
-            <View style={styles.modalContent}>
-              <View style={styles.modalHandle} />
-              <Text style={styles.modalTitle}>Edit Todo</Text>
+            <View style={styles(theme).modalContent}>
+              <View style={styles(theme).modalHandle} />
+              <Text style={styles(theme).modalTitle}>Edit Todo</Text>
               <TextInput
-                style={styles.input}
+                style={styles(theme).input}
                 value={editText}
                 onChangeText={setEditText}
                 placeholderTextColor={theme.secondaryText}
                 accessibilityLabel="Edit todo text"
               />
               <Pressable
-                style={styles.daySelector}
+                style={styles(theme).daySelector}
                 onPress={() => setDaySelectOpen(!daySelectOpen)}
                 accessibilityLabel="Select day"
               >
-                <Text style={styles.daySelectorText}>{editDay}</Text>
+                <Text style={styles(theme).daySelectorText}>{editDay}</Text>
                 <Ionicons
                   name="chevron-down"
                   size={16}
@@ -1155,27 +1255,27 @@ export default function TodoApp() {
                 />
               </Pressable>
               {daySelectOpen && (
-                <View style={styles.daySelectDropdown}>
+                <View style={styles(theme).daySelectDropdown}>
                   {DAYS.map((day) => (
                     <Pressable
                       key={day}
-                      style={styles.daySelectItem}
+                      style={styles(theme).daySelectItem}
                       onPress={() => {
                         setEditDay(day);
                         setDaySelectOpen(false);
                       }}
                     >
-                      <Text style={styles.daySelectItemText}>{day}</Text>
+                      <Text style={styles(theme).daySelectItemText}>{day}</Text>
                     </Pressable>
                   ))}
                 </View>
               )}
               <Pressable
-                style={styles.timeSelector}
+                style={styles(theme).timeSelector}
                 onPress={() => setShowEditTimePicker(true)}
                 accessibilityLabel="Select time"
               >
-                <Text style={styles.timeSelectorText}>
+                <Text style={styles(theme).timeSelectorText}>
                   {format(editSelectedTime, "hh:mm a")}
                 </Text>
                 <Ionicons
@@ -1185,11 +1285,11 @@ export default function TodoApp() {
                 />
               </Pressable>
               <Pressable
-                style={styles.daySelector}
+                style={styles(theme).daySelector}
                 onPress={() => setEditRecurrenceOpen(!editRecurrenceOpen)}
                 accessibilityLabel="Select recurrence"
               >
-                <Text style={styles.daySelectorText}>
+                <Text style={styles(theme).daySelectorText}>
                   {editRecurrence === "none"
                     ? "No recurrence"
                     : editRecurrence.charAt(0).toUpperCase() +
@@ -1198,11 +1298,11 @@ export default function TodoApp() {
                 <Ionicons name="repeat" size={16} color={theme.secondaryText} />
               </Pressable>
               {editRecurrenceOpen && (
-                <View style={styles.daySelectDropdown}>
+                <View style={styles(theme).daySelectDropdown}>
                   {["none", "daily", "weekly", "monthly"].map((option) => (
                     <Pressable
                       key={option}
-                      style={styles.daySelectItem}
+                      style={styles(theme).daySelectItem}
                       onPress={() => {
                         setEditRecurrence(
                           option as "none" | "daily" | "weekly" | "monthly"
@@ -1210,7 +1310,7 @@ export default function TodoApp() {
                         setEditRecurrenceOpen(false);
                       }}
                     >
-                      <Text style={styles.daySelectItemText}>
+                      <Text style={styles(theme).daySelectItemText}>
                         {option === "none"
                           ? "No recurrence"
                           : option.charAt(0).toUpperCase() + option.slice(1)}
@@ -1221,11 +1321,11 @@ export default function TodoApp() {
               )}
               {editRecurrence === "none" && (
                 <Pressable
-                  style={styles.daySelector}
+                  style={styles(theme).daySelector}
                   onPress={() => setEditNotificationOpen(!editNotificationOpen)}
                   accessibilityLabel="Select notification preference"
                 >
-                  <Text style={styles.daySelectorText}>
+                  <Text style={styles(theme).daySelectorText}>
                     {editNotificationPreference === "none"
                       ? "No notification"
                       : editNotificationPreference === "atDue"
@@ -1242,18 +1342,18 @@ export default function TodoApp() {
                 </Pressable>
               )}
               {editNotificationOpen && editRecurrence === "none" && (
-                <View style={styles.daySelectDropdown}>
+                <View style={styles(theme).daySelectDropdown}>
                   {["none", "atDue", "30minBefore", "1hourBefore"].map(
                     (option) => (
                       <Pressable
                         key={option}
-                        style={styles.daySelectItem}
+                        style={styles(theme).daySelectItem}
                         onPress={() => {
                           setEditNotificationPreference(option as any);
                           setEditNotificationOpen(false);
                         }}
                       >
-                        <Text style={styles.daySelectItemText}>
+                        <Text style={styles(theme).daySelectItemText}>
                           {option === "none"
                             ? "No notification"
                             : option === "atDue"
@@ -1276,14 +1376,16 @@ export default function TodoApp() {
                   <BlurView
                     intensity={80}
                     style={StyleSheet.absoluteFill}
-                    tint="dark"
+                    tint={isDark ? "dark" : "light"}
                   >
-                    <View style={styles.datePickerContainer}>
-                      <View style={styles.datePickerHeader}>
+                    <View style={styles(theme).datePickerContainer}>
+                      <View style={styles(theme).datePickerHeader}>
                         <TouchableOpacity
                           onPress={() => setShowEditTimePicker(false)}
                         >
-                          <Text style={styles.datePickerDoneText}>Done</Text>
+                          <Text style={styles(theme).datePickerDoneText}>
+                            Done
+                          </Text>
                         </TouchableOpacity>
                       </View>
                       <DateTimePicker
@@ -1310,20 +1412,20 @@ export default function TodoApp() {
                   }}
                 />
               )}
-              <View style={styles.modalButtons}>
+              <View style={styles(theme).modalButtons}>
                 <TouchableOpacity
-                  style={styles.cancelButton}
+                  style={styles(theme).cancelButton}
                   onPress={() => setIsEditModalOpen(false)}
                   accessibilityLabel="Cancel"
                 >
-                  <Text style={styles.cancelButtonText}>Cancel</Text>
+                  <Text style={styles(theme).cancelButtonText}>Cancel</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
-                  style={styles.addButton}
+                  style={styles(theme).addButton}
                   onPress={() => editTodo(todoToEdit!.id, editText, editDay)}
                   accessibilityLabel="Save changes"
                 >
-                  <Text style={styles.addButtonText}>Save</Text>
+                  <Text style={styles(theme).addButtonText}>Save</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -1338,10 +1440,14 @@ export default function TodoApp() {
         animationType="none"
         statusBarTranslucent
       >
-        <BlurView intensity={80} style={StyleSheet.absoluteFill} tint="dark">
+        <BlurView
+          intensity={80}
+          style={StyleSheet.absoluteFill}
+          tint={isDark ? "dark" : "light"}
+        >
           <Animated.View
             style={[
-              styles.modalOverlay,
+              styles(theme).modalOverlay,
               {
                 opacity: modalAnim,
                 transform: [
@@ -1360,12 +1466,12 @@ export default function TodoApp() {
               activeOpacity={1}
               onPress={() => setIsDeleteModalOpen(false)}
             />
-            <View style={styles.modalContent}>
-              <View style={styles.modalHandle} />
-              <Text style={[styles.modalTitle, { alignSelf: "center" }]}>
+            <View style={styles(theme).modalContent}>
+              <View style={styles(theme).modalHandle} />
+              <Text style={[styles(theme).modalTitle, { alignSelf: "center" }]}>
                 Confirm Deletion
               </Text>
-              <Text style={styles.modalText}>
+              <Text style={styles(theme).modalText}>
                 Are you sure you want to delete this todo?
                 {todoToDelete && (
                   <Text style={{ fontWeight: "600" }}>
@@ -1373,20 +1479,22 @@ export default function TodoApp() {
                   </Text>
                 )}
               </Text>
-              <View style={styles.modalButtons}>
+              <View style={styles(theme).modalButtons}>
                 <TouchableOpacity
-                  style={styles.cancelButton}
+                  style={styles(theme).cancelButton}
                   onPress={() => setIsDeleteModalOpen(false)}
                   accessibilityLabel="Cancel"
                 >
-                  <Text style={styles.cancelButtonText}>Cancel</Text>
+                  <Text style={styles(theme).cancelButtonText}>Cancel</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
-                  style={styles.deleteConfirmButton}
+                  style={styles(theme).deleteConfirmButton}
                   onPress={confirmDelete}
                   accessibilityLabel="Delete todo"
                 >
-                  <Text style={styles.deleteConfirmButtonText}>Delete</Text>
+                  <Text style={styles(theme).deleteConfirmButtonText}>
+                    Delete
+                  </Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -1402,11 +1510,15 @@ export default function TodoApp() {
           animationType="fade"
           statusBarTranslucent
         >
-          <BlurView intensity={80} style={StyleSheet.absoluteFill} tint="dark">
-            <View style={styles.datePickerContainer}>
-              <View style={styles.datePickerHeader}>
+          <BlurView
+            intensity={80}
+            style={StyleSheet.absoluteFill}
+            tint={isDark ? "dark" : "light"}
+          >
+            <View style={styles(theme).datePickerContainer}>
+              <View style={styles(theme).datePickerHeader}>
                 <TouchableOpacity onPress={() => setShowDatePicker(false)}>
-                  <Text style={styles.datePickerDoneText}>Done</Text>
+                  <Text style={styles(theme).datePickerDoneText}>Done</Text>
                 </TouchableOpacity>
               </View>
               <DateTimePicker
@@ -1439,10 +1551,14 @@ export default function TodoApp() {
         statusBarTranslucent
         onRequestClose={() => setIsSearchModalOpen(false)}
       >
-        <BlurView intensity={80} style={StyleSheet.absoluteFill} tint="dark">
+        <BlurView
+          intensity={80}
+          style={StyleSheet.absoluteFill}
+          tint={isDark ? "dark" : "light"}
+        >
           <Animated.View
             style={[
-              styles.modalOverlay,
+              styles(theme).modalOverlay,
               {
                 opacity: modalAnim,
                 transform: [
@@ -1463,7 +1579,7 @@ export default function TodoApp() {
             />
             <Animated.View
               style={[
-                styles.searchModalContent,
+                styles(theme).searchModalContent,
                 {
                   transform: [
                     {
@@ -1476,17 +1592,17 @@ export default function TodoApp() {
                 },
               ]}
             >
-              <View style={styles.modalHandle} />
-              <Text style={styles.modalTitle}>Search Todos</Text>
-              <View style={styles.searchInputContainer}>
+              <View style={styles(theme).modalHandle} />
+              <Text style={styles(theme).modalTitle}>Search Todos</Text>
+              <View style={styles(theme).searchInputContainer}>
                 <Ionicons
                   name="search"
                   size={20}
                   color={theme.secondaryText}
-                  style={styles.searchIcon}
+                  style={styles(theme).searchIcon}
                 />
                 <TextInput
-                  style={styles.searchInput}
+                  style={styles(theme).searchInput}
                   placeholder="Search todos..."
                   placeholderTextColor={theme.secondaryText}
                   value={searchQuery}
@@ -1497,7 +1613,7 @@ export default function TodoApp() {
                 {searchQuery.length > 0 && (
                   <TouchableOpacity
                     onPress={() => setSearchQuery("")}
-                    style={styles.clearSearchButton}
+                    style={styles(theme).clearSearchButton}
                   >
                     <Ionicons
                       name="close-circle"
@@ -1508,29 +1624,31 @@ export default function TodoApp() {
                 )}
               </View>
               <ScrollView
-                style={styles.searchResultsContainer}
+                style={styles(theme).searchResultsContainer}
                 showsVerticalScrollIndicator={false}
               >
                 {filteredTodos.length > 0 ? (
                   filteredTodos.map((todo) => (
                     <Pressable
                       key={todo.id}
-                      style={styles.searchResultItem}
+                      style={styles(theme).searchResultItem}
                       onPress={() => handleResultClick(todo)}
                       android_ripple={{ color: theme.cardHighlight }}
                     >
-                      <View style={styles.searchResultTextContainer}>
-                        <Text style={styles.searchResultTextMain}>
+                      <View style={styles(theme).searchResultTextContainer}>
+                        <Text style={styles(theme).searchResultTextMain}>
                           {todo.text}
                         </Text>
-                        <View style={styles.searchResultMeta}>
-                          <Text style={styles.searchResultDay}>{todo.day}</Text>
-                          <Text style={styles.searchResultDate}>
+                        <View style={styles(theme).searchResultMeta}>
+                          <Text style={styles(theme).searchResultDay}>
+                            {todo.day}
+                          </Text>
+                          <Text style={styles(theme).searchResultDate}>
                             {format(parseISO(todo.createdAt), "MMM d, yyyy")}
                           </Text>
                         </View>
                       </View>
-                      <View style={styles.searchResultIcons}>
+                      <View style={styles(theme).searchResultIcons}>
                         {todo.recurring && (
                           <Ionicons
                             name="repeat"
@@ -1552,7 +1670,7 @@ export default function TodoApp() {
                     </Pressable>
                   ))
                 ) : (
-                  <Text style={styles.emptySearch}>
+                  <Text style={styles(theme).emptySearch}>
                     {searchQuery
                       ? "No matching todos found"
                       : "Enter a search term"}
@@ -1560,11 +1678,11 @@ export default function TodoApp() {
                 )}
               </ScrollView>
               <TouchableOpacity
-                style={styles.closeSearchButton}
+                style={styles(theme).closeSearchButton}
                 onPress={() => setIsSearchModalOpen(false)}
                 accessibilityLabel="Close search"
               >
-                <Text style={styles.closeSearchButtonText}>Close</Text>
+                <Text style={styles(theme).closeSearchButtonText}>Close</Text>
               </TouchableOpacity>
             </Animated.View>
           </Animated.View>
@@ -1589,6 +1707,7 @@ const TodoItem: React.FC<TodoItemProps> = ({
   onDelete,
   onEdit,
 }) => {
+  const { theme } = useTheme();
   const isCompleted = todo.recurring
     ? (todo.completedInstances || []).includes(format(date, "yyyy-MM-dd"))
     : todo.completed;
@@ -1632,17 +1751,17 @@ const TodoItem: React.FC<TodoItemProps> = ({
 
   return (
     <Pressable
-      style={styles.todoItem}
+      style={styles(theme).todoItem}
       onPress={handleTodoToggle}
       android_ripple={{ color: theme.cardHighlight }}
     >
       <TouchableOpacity
         onPress={handleTodoToggle}
-        style={styles.checkboxContainer}
+        style={styles(theme).checkboxContainer}
       >
         <Animated.View
           style={[
-            styles.customCheckbox,
+            styles(theme).customCheckbox,
             {
               borderColor: checkboxBorderColor,
               backgroundColor: checkboxBackgroundColor,
@@ -1655,18 +1774,22 @@ const TodoItem: React.FC<TodoItemProps> = ({
         </Animated.View>
       </TouchableOpacity>
       <View style={{ flex: 1 }}>
-        <View style={styles.todoTextContainer}>
+        <View style={styles(theme).todoTextContainer}>
           <Text
-            style={isCompleted ? styles.todoTextCompleted : styles.todoText}
+            style={
+              isCompleted
+                ? styles(theme).todoTextCompleted
+                : styles(theme).todoText
+            }
             numberOfLines={2}
           >
             {todo.text}
           </Text>
-          <View style={styles.todoMetaContainer}>
-            <Text style={styles.todoTime}>
+          <View style={styles(theme).todoMetaContainer}>
+            <Text style={styles(theme).todoTime}>
               {format(parseISO(todo.createdAt), "hh:mm a")}
             </Text>
-            <View style={styles.todoIconsContainer}>
+            <View style={styles(theme).todoIconsContainer}>
               {todo.notificationPreference &&
                 todo.notificationPreference !== "none" && (
                   <Ionicons
@@ -1688,16 +1811,16 @@ const TodoItem: React.FC<TodoItemProps> = ({
           </View>
         </View>
       </View>
-      <View style={styles.todoActions}>
+      <View style={styles(theme).todoActions}>
         <TouchableOpacity
-          style={styles.actionButton}
+          style={styles(theme).actionButton}
           onPress={handleEditPress}
           accessibilityLabel="Edit todo"
         >
           <Ionicons name="pencil-outline" size={20} color={theme.primary} />
         </TouchableOpacity>
         <TouchableOpacity
-          style={styles.actionButton}
+          style={styles(theme).actionButton}
           onPress={handleDelete}
           accessibilityLabel="Delete todo"
         >
@@ -1729,6 +1852,7 @@ const DaySection: React.FC<DaySectionProps> = ({
   onDelete,
   onToggleTodo,
 }) => {
+  const { theme } = useTheme();
   // Animation for day section
   const expandAnim = useRef(new Animated.Value(expanded ? 1 : 0)).current;
 
@@ -1755,23 +1879,25 @@ const DaySection: React.FC<DaySectionProps> = ({
     format(date, "yyyy-MM-dd") === format(new Date(), "yyyy-MM-dd");
 
   return (
-    <View style={[styles.daySection, isToday && styles.todaySection]}>
+    <View
+      style={[styles(theme).daySection, isToday && styles(theme).todaySection]}
+    >
       <Pressable
-        style={styles.daySectionHeader}
+        style={styles(theme).daySectionHeader}
         onPress={onToggle}
         android_ripple={{ color: theme.cardHighlight }}
         accessibilityLabel={`${day}, ${todos.length} todo${
           todos.length !== 1 ? "s" : ""
         }`}
       >
-        <View style={styles.daySectionHeaderLeft}>
-          <Text style={styles.daySectionTitle}>{day}</Text>
-          <Text style={styles.todoCount}>({todos.length})</Text>
+        <View style={styles(theme).daySectionHeaderLeft}>
+          <Text style={styles(theme).daySectionTitle}>{day}</Text>
+          <Text style={styles(theme).todoCount}>({todos.length})</Text>
         </View>
-        <View style={styles.daySectionHeaderRight}>
+        <View style={styles(theme).daySectionHeaderRight}>
           {isToday && (
-            <View style={styles.todayBadge}>
-              <Text style={styles.todayText}>TODAY</Text>
+            <View style={styles(theme).todayBadge}>
+              <Text style={styles(theme).todayText}>TODAY</Text>
             </View>
           )}
           <Animated.View style={{ transform: [{ rotate: rotateArrow }] }}>
@@ -1780,9 +1906,13 @@ const DaySection: React.FC<DaySectionProps> = ({
         </View>
       </Pressable>
 
-      <Animated.View style={[styles.daySectionContentWrapper, { maxHeight }]}>
-        <View style={styles.daySectionContent}>
-          <Text style={styles.dateInfo}>{format(date, "MMMM d, yyyy")}</Text>
+      <Animated.View
+        style={[styles(theme).daySectionContentWrapper, { maxHeight }]}
+      >
+        <View style={styles(theme).daySectionContent}>
+          <Text style={styles(theme).dateInfo}>
+            {format(date, "MMMM d, yyyy")}
+          </Text>
           {todos.length > 0 ? (
             todos.map((todo) => (
               <TodoItem
@@ -1795,7 +1925,9 @@ const DaySection: React.FC<DaySectionProps> = ({
               />
             ))
           ) : (
-            <Text style={styles.emptyList}>Nothing to do yet—add a task!</Text>
+            <Text style={styles(theme).emptyList}>
+              Nothing to do yet—add a task!
+            </Text>
           )}
         </View>
       </Animated.View>
@@ -1803,460 +1935,460 @@ const DaySection: React.FC<DaySectionProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: theme.background,
-  },
-  content: {
-    flex: 1,
-    padding: 16,
-  },
-  weekNavigation: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    backgroundColor: theme.card,
-    borderRadius: 16,
-    padding: 12,
-    marginBottom: 16,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 5,
-  },
-  navigationButton: {
-    padding: 8,
-    borderRadius: 12,
-    backgroundColor: theme.cardHighlight,
-  },
-  weekText: {
-    fontWeight: "600",
-    fontSize: 18,
-    color: theme.text,
-    textAlign: "center",
-    marginBottom: 16,
-  },
-  fabContainer: {
-    position: "absolute",
-    bottom: 20,
-    right: 20,
-    shadowColor: theme.primary,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.4,
-    shadowRadius: 8,
-    elevation: 8,
-  },
-  fab: {
-    backgroundColor: theme.primary,
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  modalOverlay: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  modalContent: {
-    backgroundColor: theme.card,
-    borderRadius: 20,
-    padding: 24,
-    width: "90%",
-    maxWidth: 400,
-    elevation: 5,
-    alignItems: "center",
-  },
-  modalHandle: {
-    width: 40,
-    height: 5,
-    backgroundColor: theme.separator,
-    borderRadius: 3,
-    marginBottom: 16,
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: "bold",
-    marginBottom: 16,
-    color: theme.text,
-    alignSelf: "flex-start",
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: theme.separator,
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 12,
-    color: theme.text,
-    width: "100%",
-    backgroundColor: theme.cardHighlight,
-  },
-  daySelector: {
-    borderWidth: 1,
-    borderColor: theme.separator,
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 12,
-    width: "100%",
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    backgroundColor: theme.cardHighlight,
-  },
-  daySelectorText: {
-    color: theme.text,
-  },
-  daySelectDropdown: {
-    position: "absolute",
-    top: 110,
-    right: 0,
-    backgroundColor: theme.card,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: theme.separator,
-    width: "100%",
-    elevation: 5,
-    zIndex: 1000,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-  },
-  daySelectItem: {
-    padding: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.separator,
-  },
-  daySelectItemText: {
-    color: theme.text,
-  },
-  modalButtons: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginTop: 16,
-    width: "100%",
-  },
-  cancelButton: {
-    padding: 14,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: theme.separator,
-    alignItems: "center",
-    flex: 1,
-    marginRight: 8,
-    backgroundColor: theme.cardHighlight,
-  },
-  cancelButtonText: {
-    color: theme.text,
-    fontWeight: "600",
-  },
-  addButton: {
-    backgroundColor: theme.primary,
-    padding: 14,
-    borderRadius: 12,
-    alignItems: "center",
-    flex: 1,
-  },
-  addButtonText: {
-    color: theme.card,
-    fontWeight: "600",
-  },
-  deleteConfirmButton: {
-    backgroundColor: theme.error,
-    padding: 14,
-    borderRadius: 12,
-    alignItems: "center",
-    flex: 1,
-  },
-  deleteConfirmButtonText: {
-    color: "#ffffff",
-    fontWeight: "600",
-  },
-  modalText: {
-    marginBottom: 20,
-    color: theme.text,
-    textAlign: "center",
-    lineHeight: 22,
-  },
-  daySection: {
-    backgroundColor: theme.card,
-    borderRadius: 16,
-    marginBottom: 16,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-    overflow: "hidden",
-  },
-  todaySection: {
-    borderLeftWidth: 3,
-    borderLeftColor: theme.primary,
-  },
-  daySectionHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    padding: 16,
-  },
-  daySectionHeaderLeft: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  daySectionHeaderRight: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  daySectionTitle: {
-    fontSize: 18,
-    fontWeight: "bold",
-    color: theme.text,
-  },
-  todoCount: {
-    fontSize: 14,
-    color: theme.secondaryText,
-    marginLeft: 8,
-  },
-  daySectionContentWrapper: {
-    overflow: "hidden",
-  },
-  daySectionContent: {
-    padding: 16,
-    paddingTop: 0,
-  },
-  dateInfo: {
-    fontSize: 14,
-    color: theme.secondaryText,
-    marginBottom: 16,
-  },
-  todoItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    padding: 12,
-    borderRadius: 12,
-    backgroundColor: theme.cardHighlight,
-    marginBottom: 8,
-  },
-  checkboxContainer: {
-    marginRight: 12,
-  },
-  customCheckbox: {
-    width: 24,
-    height: 24,
-    borderRadius: 6,
-    borderWidth: 2,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  todoTextContainer: {
-    flex: 1,
-  },
-  todoText: {
-    fontSize: 16,
-    color: theme.text,
-    marginBottom: 4,
-  },
-  todoTextCompleted: {
-    fontSize: 16,
-    color: theme.completed,
-    marginBottom: 4,
-    textDecorationLine: "line-through",
-  },
-  todoMetaContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 2,
-    // justifyContent: "space-between",
-  },
-  todoTime: {
-    fontSize: 12,
-    color: theme.secondaryText,
-  },
-  todoIconsContainer: {
-    flexDirection: "row",
-  },
-  todoActions: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  actionButton: {
-    padding: 8,
-    marginLeft: 4,
-  },
-  emptyList: {
-    color: theme.secondaryText,
-    fontSize: 14,
-    fontStyle: "italic",
-    textAlign: "center",
-    padding: 16,
-  },
-  datePickerContainer: {
-    backgroundColor: theme.card,
-    padding: Platform.OS === "ios" ? 16 : 0,
-    borderRadius: 16,
-    width: "90%",
-    maxWidth: 400,
-  },
-  datePickerHeader: {
-    flexDirection: "row",
-    justifyContent: "flex-end",
-    marginBottom: 8,
-  },
-  datePickerDoneText: {
-    color: theme.primary,
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  filterContainer: {
-    flexDirection: "row",
-    justifyContent: "space-around",
-    marginVertical: 16,
-  },
-  filterButton: {
-    flex: 1,
-    padding: 10,
-    borderRadius: 12,
-    backgroundColor: theme.card,
-    marginHorizontal: 5,
-    alignItems: "center",
-  },
-  activeFilter: {
-    backgroundColor: theme.primary,
-  },
-  activeFilterText: {
-    color: theme.card,
-  },
-  filterText: {
-    color: theme.text,
-    fontWeight: "600",
-  },
-  timeSelector: {
-    borderWidth: 1,
-    borderColor: theme.separator,
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 12,
-    width: "100%",
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    backgroundColor: theme.cardHighlight,
-  },
-  timeSelectorText: {
-    color: theme.text,
-  },
-  searchModalContent: {
-    backgroundColor: theme.card,
-    borderRadius: 20,
-    padding: 24,
-    width: "90%",
-    maxWidth: 400,
-    maxHeight: "80%",
-    elevation: 5,
-    alignItems: "center",
-  },
-  searchResultsContainer: {
-    width: "100%",
-    marginTop: 10,
-    marginBottom: 16,
-  },
-  searchInputContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    width: "100%",
-    backgroundColor: theme.cardHighlight,
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    marginBottom: 16,
-  },
-  searchIcon: {
-    marginRight: 8,
-  },
-  searchInput: {
-    flex: 1,
-    color: theme.text,
-    padding: 12,
-  },
-  clearSearchButton: {
-    padding: 8,
-  },
-  searchResultItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    padding: 16,
-    borderRadius: 12,
-    backgroundColor: theme.cardHighlight,
-    marginBottom: 8,
-  },
-  searchResultTextContainer: {
-    flex: 1,
-  },
-  searchResultTextMain: {
-    fontSize: 16,
-    color: theme.text,
-    marginBottom: 4,
-  },
-  searchResultMeta: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  searchResultDay: {
-    fontSize: 12,
-    color: theme.secondaryText,
-    marginRight: 8,
-  },
-  searchResultDate: {
-    fontSize: 12,
-    color: theme.secondaryText,
-  },
-  searchResultIcons: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  emptySearch: {
-    fontSize: 14,
-    color: theme.secondaryText,
-    textAlign: "center",
-    marginTop: 20,
-  },
-  closeSearchButton: {
-    backgroundColor: theme.primary,
-    padding: 14,
-    borderRadius: 12,
-    alignItems: "center",
-    width: "100%",
-  },
-  closeSearchButtonText: {
-    color: theme.card,
-    fontWeight: "600",
-  },
-  searchButton: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: theme.cardHighlight,
-    borderRadius: 12,
-    padding: 10,
-    marginHorizontal: 8,
-  },
-  searchButtonText: {
-    color: theme.secondaryText,
-    marginLeft: 8,
-  },
-  todayBadge: {
-    backgroundColor: theme.primary,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
-    marginRight: 8,
-  },
-  todayText: {
-    color: theme.card,
-    fontSize: 10,
-    fontWeight: "bold",
-  },
-});
+const styles = (theme: any) =>
+  StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: theme.background,
+    },
+    content: {
+      flex: 1,
+      padding: 16,
+    },
+    weekNavigation: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+      backgroundColor: theme.card,
+      borderRadius: 16,
+      padding: 12,
+      marginBottom: 16,
+      shadowColor: "#000",
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.2,
+      shadowRadius: 8,
+      elevation: 5,
+    },
+    navigationButton: {
+      padding: 8,
+      borderRadius: 12,
+      backgroundColor: theme.cardHighlight,
+    },
+    weekText: {
+      fontWeight: "600",
+      fontSize: 18,
+      color: theme.text,
+      textAlign: "center",
+      marginBottom: 16,
+    },
+    fabContainer: {
+      position: "absolute",
+      bottom: 20,
+      right: 20,
+      shadowColor: theme.primary,
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.4,
+      shadowRadius: 8,
+      elevation: 8,
+    },
+    fab: {
+      backgroundColor: theme.primary,
+      width: 60,
+      height: 60,
+      borderRadius: 30,
+      justifyContent: "center",
+      alignItems: "center",
+    },
+    modalOverlay: {
+      flex: 1,
+      justifyContent: "center",
+      alignItems: "center",
+    },
+    modalContent: {
+      backgroundColor: theme.card,
+      borderRadius: 20,
+      padding: 24,
+      width: "90%",
+      maxWidth: 400,
+      elevation: 5,
+      alignItems: "center",
+    },
+    modalHandle: {
+      width: 40,
+      height: 5,
+      backgroundColor: theme.separator,
+      borderRadius: 3,
+      marginBottom: 16,
+    },
+    modalTitle: {
+      fontSize: 20,
+      fontWeight: "bold",
+      marginBottom: 16,
+      color: theme.text,
+      alignSelf: "flex-start",
+    },
+    input: {
+      borderWidth: 1,
+      borderColor: theme.separator,
+      borderRadius: 12,
+      padding: 14,
+      marginBottom: 12,
+      color: theme.text,
+      width: "100%",
+      backgroundColor: theme.cardHighlight,
+    },
+    daySelector: {
+      borderWidth: 1,
+      borderColor: theme.separator,
+      borderRadius: 12,
+      padding: 14,
+      marginBottom: 12,
+      width: "100%",
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+      backgroundColor: theme.cardHighlight,
+    },
+    daySelectorText: {
+      color: theme.text,
+    },
+    daySelectDropdown: {
+      position: "absolute",
+      top: 110,
+      right: 0,
+      backgroundColor: theme.card,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: theme.separator,
+      width: "100%",
+      elevation: 5,
+      zIndex: 1000,
+      shadowColor: "#000",
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.2,
+      shadowRadius: 8,
+    },
+    daySelectItem: {
+      padding: 14,
+      borderBottomWidth: 1,
+      borderBottomColor: theme.separator,
+    },
+    daySelectItemText: {
+      color: theme.text,
+    },
+    modalButtons: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      marginTop: 16,
+      width: "100%",
+    },
+    cancelButton: {
+      padding: 14,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: theme.separator,
+      alignItems: "center",
+      flex: 1,
+      marginRight: 8,
+      backgroundColor: theme.cardHighlight,
+    },
+    cancelButtonText: {
+      color: theme.text,
+      fontWeight: "600",
+    },
+    addButton: {
+      backgroundColor: theme.primary,
+      padding: 14,
+      borderRadius: 12,
+      alignItems: "center",
+      flex: 1,
+    },
+    addButtonText: {
+      color: theme.card,
+      fontWeight: "600",
+    },
+    deleteConfirmButton: {
+      backgroundColor: theme.error,
+      padding: 14,
+      borderRadius: 12,
+      alignItems: "center",
+      flex: 1,
+    },
+    deleteConfirmButtonText: {
+      color: "#ffffff",
+      fontWeight: "600",
+    },
+    modalText: {
+      marginBottom: 20,
+      color: theme.text,
+      textAlign: "center",
+      lineHeight: 22,
+    },
+    daySection: {
+      backgroundColor: theme.card,
+      borderRadius: 16,
+      marginBottom: 16,
+      shadowColor: "#000",
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.1,
+      shadowRadius: 4,
+      elevation: 3,
+      overflow: "hidden",
+    },
+    todaySection: {
+      borderLeftWidth: 3,
+      borderLeftColor: theme.primary,
+    },
+    daySectionHeader: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      padding: 16,
+    },
+    daySectionHeaderLeft: {
+      flexDirection: "row",
+      alignItems: "center",
+    },
+    daySectionHeaderRight: {
+      flexDirection: "row",
+      alignItems: "center",
+    },
+    daySectionTitle: {
+      fontSize: 18,
+      fontWeight: "bold",
+      color: theme.text,
+    },
+    todoCount: {
+      fontSize: 14,
+      color: theme.secondaryText,
+      marginLeft: 8,
+    },
+    daySectionContentWrapper: {
+      overflow: "hidden",
+    },
+    daySectionContent: {
+      padding: 16,
+      paddingTop: 0,
+    },
+    dateInfo: {
+      fontSize: 14,
+      color: theme.secondaryText,
+      marginBottom: 16,
+    },
+    todoItem: {
+      flexDirection: "row",
+      alignItems: "center",
+      padding: 12,
+      borderRadius: 12,
+      backgroundColor: theme.cardHighlight,
+      marginBottom: 8,
+    },
+    checkboxContainer: {
+      marginRight: 12,
+    },
+    customCheckbox: {
+      width: 24,
+      height: 24,
+      borderRadius: 6,
+      borderWidth: 2,
+      justifyContent: "center",
+      alignItems: "center",
+    },
+    todoTextContainer: {
+      flex: 1,
+    },
+    todoText: {
+      fontSize: 16,
+      color: theme.text,
+      marginBottom: 4,
+    },
+    todoTextCompleted: {
+      fontSize: 16,
+      color: theme.completed,
+      marginBottom: 4,
+      textDecorationLine: "line-through",
+    },
+    todoMetaContainer: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 2,
+    },
+    todoTime: {
+      fontSize: 12,
+      color: theme.secondaryText,
+    },
+    todoIconsContainer: {
+      flexDirection: "row",
+    },
+    todoActions: {
+      flexDirection: "row",
+      alignItems: "center",
+    },
+    actionButton: {
+      padding: 8,
+      marginLeft: 4,
+    },
+    emptyList: {
+      color: theme.secondaryText,
+      fontSize: 14,
+      fontStyle: "italic",
+      textAlign: "center",
+      padding: 16,
+    },
+    datePickerContainer: {
+      backgroundColor: theme.card,
+      padding: Platform.OS === "ios" ? 16 : 0,
+      borderRadius: 16,
+      width: "90%",
+      maxWidth: 400,
+    },
+    datePickerHeader: {
+      flexDirection: "row",
+      justifyContent: "flex-end",
+      marginBottom: 8,
+    },
+    datePickerDoneText: {
+      color: theme.primary,
+      fontSize: 16,
+      fontWeight: "600",
+    },
+    filterContainer: {
+      flexDirection: "row",
+      justifyContent: "space-around",
+      marginVertical: 16,
+    },
+    filterButton: {
+      flex: 1,
+      padding: 10,
+      borderRadius: 12,
+      backgroundColor: theme.card,
+      marginHorizontal: 5,
+      alignItems: "center",
+    },
+    activeFilter: {
+      backgroundColor: theme.primary,
+    },
+    activeFilterText: {
+      color: theme.card,
+    },
+    filterText: {
+      color: theme.text,
+      fontWeight: "600",
+    },
+    timeSelector: {
+      borderWidth: 1,
+      borderColor: theme.separator,
+      borderRadius: 12,
+      padding: 14,
+      marginBottom: 12,
+      width: "100%",
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+      backgroundColor: theme.cardHighlight,
+    },
+    timeSelectorText: {
+      color: theme.text,
+    },
+    searchModalContent: {
+      backgroundColor: theme.card,
+      borderRadius: 20,
+      padding: 24,
+      width: "90%",
+      maxWidth: 400,
+      maxHeight: "80%",
+      elevation: 5,
+      alignItems: "center",
+    },
+    searchResultsContainer: {
+      width: "100%",
+      marginTop: 10,
+      marginBottom: 16,
+    },
+    searchInputContainer: {
+      flexDirection: "row",
+      alignItems: "center",
+      width: "100%",
+      backgroundColor: theme.cardHighlight,
+      borderRadius: 12,
+      paddingHorizontal: 12,
+      marginBottom: 16,
+    },
+    searchIcon: {
+      marginRight: 8,
+    },
+    searchInput: {
+      flex: 1,
+      color: theme.text,
+      padding: 12,
+    },
+    clearSearchButton: {
+      padding: 8,
+    },
+    searchResultItem: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      padding: 16,
+      borderRadius: 12,
+      backgroundColor: theme.cardHighlight,
+      marginBottom: 8,
+    },
+    searchResultTextContainer: {
+      flex: 1,
+    },
+    searchResultTextMain: {
+      fontSize: 16,
+      color: theme.text,
+      marginBottom: 4,
+    },
+    searchResultMeta: {
+      flexDirection: "row",
+      alignItems: "center",
+    },
+    searchResultDay: {
+      fontSize: 12,
+      color: theme.secondaryText,
+      marginRight: 8,
+    },
+    searchResultDate: {
+      fontSize: 12,
+      color: theme.secondaryText,
+    },
+    searchResultIcons: {
+      flexDirection: "row",
+      alignItems: "center",
+    },
+    emptySearch: {
+      fontSize: 14,
+      color: theme.secondaryText,
+      textAlign: "center",
+      marginTop: 20,
+    },
+    closeSearchButton: {
+      backgroundColor: theme.primary,
+      padding: 14,
+      borderRadius: 12,
+      alignItems: "center",
+      width: "100%",
+    },
+    closeSearchButtonText: {
+      color: theme.card,
+      fontWeight: "600",
+    },
+    searchButton: {
+      flex: 1,
+      flexDirection: "row",
+      alignItems: "center",
+      backgroundColor: theme.cardHighlight,
+      borderRadius: 12,
+      padding: 10,
+      marginHorizontal: 8,
+    },
+    searchButtonText: {
+      color: theme.secondaryText,
+      marginLeft: 8,
+    },
+    todayBadge: {
+      backgroundColor: theme.primary,
+      paddingHorizontal: 8,
+      paddingVertical: 4,
+      borderRadius: 8,
+      marginRight: 8,
+    },
+    todayText: {
+      color: theme.card,
+      fontSize: 10,
+      fontWeight: "bold",
+    },
+  });

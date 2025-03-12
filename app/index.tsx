@@ -38,6 +38,9 @@ import {
   parseISO,
   getDay,
   addDays,
+  isToday,
+  isFuture,
+  isPast,
 } from "date-fns";
 import { Ionicons } from "@expo/vector-icons";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -258,10 +261,17 @@ function TodoAppContent() {
   const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
 
+  // New state for view mode
+  const [viewMode, setViewMode] = useState<"calendar" | "list">("calendar");
+  const [taskListFilter, setTaskListFilter] = useState<
+    "all" | "today" | "upcoming" | "past"
+  >("all");
+
   // Animation values
   const fabAnim = useRef(new Animated.Value(1)).current;
   const modalAnim = useRef(new Animated.Value(0)).current;
   const searchInputAnim = useRef(new Animated.Value(0)).current;
+  const viewSwitchAnim = useRef(new Animated.Value(0)).current;
 
   const filteredTodos = useMemo(() => {
     if (!searchQuery.trim()) return [];
@@ -269,6 +279,39 @@ function TodoAppContent() {
       todo.text.toLowerCase().includes(searchQuery.toLowerCase())
     );
   }, [todos, searchQuery]);
+
+  // Get all tasks for the list view, sorted by creation date (newest first)
+  const allTasksList = useMemo(() => {
+    // Create a map to store the effective date for each todo
+    const todoMap = new Map<string, { todo: Todo; effectiveDate: Date }>();
+
+    // Process all todos
+    todos.forEach((todo) => {
+      const todoDate = parseISO(todo.createdAt);
+
+      if (!todo.recurring) {
+        // For non-recurring todos, just use their creation date
+        todoMap.set(todo.id, { todo, effectiveDate: todoDate });
+      } else {
+        // For recurring todos, use today's date to make them appear at the top
+        // This ensures recurring tasks are always relevant
+        todoMap.set(todo.id, { todo, effectiveDate: new Date() });
+      }
+    });
+
+    // Convert map to array and sort by effective date (newest first)
+    return Array.from(todoMap.values())
+      .filter(({ todo, effectiveDate }) => {
+        if (taskListFilter === "all") return true;
+        if (taskListFilter === "today") return isToday(effectiveDate);
+        if (taskListFilter === "upcoming") return isFuture(effectiveDate);
+        if (taskListFilter === "past")
+          return isPast(effectiveDate) && !isToday(effectiveDate);
+        return true;
+      })
+      .sort((a, b) => b.effectiveDate.getTime() - a.effectiveDate.getTime())
+      .map((item) => item.todo);
+  }, [todos, taskListFilter]);
 
   const handleResultClick = (todo: Todo) => {
     // Animate search closing
@@ -368,6 +411,16 @@ function TodoAppContent() {
       }).start();
     }
   }, [isSearchModalOpen]);
+
+  // View mode switch animation
+  useEffect(() => {
+    Animated.timing(viewSwitchAnim, {
+      toValue: viewMode === "calendar" ? 0 : 1,
+      duration: 300,
+      useNativeDriver: true,
+      easing: Easing.inOut(Easing.ease),
+    }).start();
+  }, [viewMode]);
 
   const getDateForDay = (day: string) => {
     const dayIndex = DAYS.indexOf(day);
@@ -769,6 +822,18 @@ function TodoAppContent() {
     }).start();
   };
 
+  // Toggle view mode
+  const toggleViewMode = () => {
+    LayoutAnimation.configureNext(
+      LayoutAnimation.create(
+        300,
+        LayoutAnimation.Types.easeInEaseOut,
+        LayoutAnimation.Properties.opacity
+      )
+    );
+    setViewMode(viewMode === "calendar" ? "list" : "calendar");
+  };
+
   interface FilterButtonProps {
     label: string;
     isActive: boolean;
@@ -828,6 +893,97 @@ function TodoAppContent() {
     });
   }, [todos, filter, expandedSections, currentDate]);
 
+  // Render a task item in the list view
+  const renderTaskItem = (todo: Todo) => {
+    const todoDate = parseISO(todo.createdAt);
+    const isRecurring = !!todo.recurring;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    // For recurring tasks, check if it's completed today
+    const isCompleted = isRecurring
+      ? (todo.completedInstances || []).includes(format(today, "yyyy-MM-dd"))
+      : todo.completed;
+
+    return (
+      <View key={todo.id} style={styles(theme).taskListItem}>
+        <TouchableOpacity
+          style={styles(theme).checkboxContainer}
+          onPress={() => toggleTodo(todo.id, format(today, "yyyy-MM-dd"))}
+        >
+          <Animated.View
+            style={[
+              styles(theme).customCheckbox,
+              {
+                borderColor: isCompleted ? theme.primary : theme.secondaryText,
+                backgroundColor: isCompleted ? theme.primary : "transparent",
+              },
+            ]}
+          >
+            {isCompleted && (
+              <Ionicons name="checkmark" size={16} color={theme.card} />
+            )}
+          </Animated.View>
+        </TouchableOpacity>
+
+        <View style={styles(theme).taskListTextContainer}>
+          <Text
+            style={
+              isCompleted
+                ? styles(theme).todoTextCompleted
+                : styles(theme).todoText
+            }
+            numberOfLines={2}
+          >
+            {todo.text}
+          </Text>
+
+          <View style={styles(theme).taskListMetaContainer}>
+            <Text style={styles(theme).taskListDay}>{todo.day}</Text>
+            <Text style={styles(theme).taskListDate}>
+              {format(todoDate, "MMM d, yyyy")} at {format(todoDate, "h:mm a")}
+            </Text>
+
+            <View style={styles(theme).todoIconsContainer}>
+              {isRecurring && (
+                <Ionicons
+                  name="repeat"
+                  size={12}
+                  color={theme.secondaryText}
+                  style={{ marginLeft: 4 }}
+                />
+              )}
+              {todo.notificationPreference &&
+                todo.notificationPreference !== "none" && (
+                  <Ionicons
+                    name="notifications-outline"
+                    size={12}
+                    color={theme.secondaryText}
+                    style={{ marginLeft: 4 }}
+                  />
+                )}
+            </View>
+          </View>
+        </View>
+
+        <View style={styles(theme).todoActions}>
+          <TouchableOpacity
+            style={styles(theme).actionButton}
+            onPress={() => openEditModal(todo)}
+          >
+            <Ionicons name="pencil-outline" size={20} color={theme.primary} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles(theme).actionButton}
+            onPress={() => openDeleteModal(todo)}
+          >
+            <Ionicons name="trash-outline" size={20} color={theme.error} />
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  };
+
   return (
     <SafeAreaView style={styles(theme).container}>
       <StatusBar style={isDark ? "light" : "dark"} />
@@ -835,93 +991,258 @@ function TodoAppContent() {
         behavior={Platform.OS === "ios" ? "padding" : "height"}
         style={{ flex: 1 }}
       >
-        <ScrollView
-          style={styles(theme).content}
-          showsVerticalScrollIndicator={false}
-          onScrollBeginDrag={() => animateFab(0.8)}
-          onScrollEndDrag={() => animateFab(1)}
-        >
-          <View style={styles(theme).weekNavigation}>
-            <TouchableOpacity
-              style={styles(theme).navigationButton}
-              onPress={() => changeWeek("prev")}
-              accessibilityLabel="Previous week"
+        <View style={styles(theme).viewModeToggleContainer}>
+          <TouchableOpacity
+            style={[
+              styles(theme).viewModeButton,
+              viewMode === "calendar" && styles(theme).activeViewModeButton,
+            ]}
+            onPress={() => setViewMode("calendar")}
+            accessibilityLabel="Calendar view"
+          >
+            <Ionicons
+              name="calendar-outline"
+              size={20}
+              color={viewMode === "calendar" ? theme.card : theme.text}
+            />
+            <Text
+              style={[
+                styles(theme).viewModeButtonText,
+                viewMode === "calendar" &&
+                  styles(theme).activeViewModeButtonText,
+              ]}
             >
-              <Ionicons name="chevron-back" size={24} color={theme.primary} />
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles(theme).searchButton}
-              onPress={() => setIsSearchModalOpen(true)}
-              accessibilityLabel="Open search"
+              Calendar
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              styles(theme).viewModeButton,
+              viewMode === "list" && styles(theme).activeViewModeButton,
+            ]}
+            onPress={() => setViewMode("list")}
+            accessibilityLabel="List view"
+          >
+            <Ionicons
+              name="list-outline"
+              size={20}
+              color={viewMode === "list" ? theme.card : theme.text}
+            />
+            <Text
+              style={[
+                styles(theme).viewModeButtonText,
+                viewMode === "list" && styles(theme).activeViewModeButtonText,
+              ]}
             >
-              <Ionicons name="search" size={20} color={theme.text} />
-              <Text style={styles(theme).searchButtonText}>
-                Search todos...
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles(theme).navigationButton}
-              onPress={() => setShowDatePicker(true)}
-              accessibilityLabel="Open calendar"
-            >
-              <Ionicons
-                name="calendar-outline"
-                size={24}
-                color={theme.primary}
+              Tasks
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        {viewMode === "calendar" ? (
+          <ScrollView
+            style={styles(theme).content}
+            showsVerticalScrollIndicator={false}
+            onScrollBeginDrag={() => animateFab(0.8)}
+            onScrollEndDrag={() => animateFab(1)}
+          >
+            <View style={styles(theme).weekNavigation}>
+              <TouchableOpacity
+                style={styles(theme).navigationButton}
+                onPress={() => changeWeek("prev")}
+                accessibilityLabel="Previous week"
+              >
+                <Ionicons name="chevron-back" size={24} color={theme.primary} />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles(theme).searchButton}
+                onPress={() => setIsSearchModalOpen(true)}
+                accessibilityLabel="Open search"
+              >
+                <Ionicons name="search" size={20} color={theme.text} />
+                <Text style={styles(theme).searchButtonText}>
+                  Search todos...
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles(theme).navigationButton}
+                onPress={() => setShowDatePicker(true)}
+                accessibilityLabel="Open calendar"
+              >
+                <Ionicons
+                  name="calendar-outline"
+                  size={24}
+                  color={theme.primary}
+                />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles(theme).navigationButton}
+                onPress={() => changeWeek("next")}
+                accessibilityLabel="Next week"
+              >
+                <Ionicons
+                  name="chevron-forward"
+                  size={24}
+                  color={theme.primary}
+                />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles(theme).weekText}>
+              {format(startOfWeek(currentDate, { weekStartsOn: 1 }), "MMM d")} -{" "}
+              {format(
+                endOfWeek(currentDate, { weekStartsOn: 1 }),
+                "MMM d, yyyy"
+              )}
+            </Text>
+
+            <View style={styles(theme).filterContainer}>
+              <FilterButton
+                label="All"
+                isActive={filter === "All"}
+                onPress={() => setFilter("All")}
               />
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles(theme).navigationButton}
-              onPress={() => changeWeek("next")}
-              accessibilityLabel="Next week"
-            >
-              <Ionicons
-                name="chevron-forward"
-                size={24}
-                color={theme.primary}
+              <FilterButton
+                label="Incomplete"
+                isActive={filter === "Incomplete"}
+                onPress={() => setFilter("Incomplete")}
               />
-            </TouchableOpacity>
+              <FilterButton
+                label="Completed"
+                isActive={filter === "Completed"}
+                onPress={() => setFilter("Completed")}
+              />
+            </View>
+
+            {sections.map((section) => (
+              <DaySection
+                key={section.day}
+                day={section.day}
+                date={section.date}
+                todos={section.todos}
+                expanded={section.expanded}
+                onToggle={() => toggleSection(section.day)}
+                onEdit={openEditModal}
+                onDelete={openDeleteModal}
+                onToggleTodo={toggleTodo}
+              />
+            ))}
+
+            <View style={{ height: 80 }} />
+          </ScrollView>
+        ) : (
+          // List view
+          <View style={styles(theme).taskListContainer}>
+            <View style={styles(theme).taskListHeader}>
+              <Text style={styles(theme).taskListTitle}>All Tasks</Text>
+              <TouchableOpacity
+                style={styles(theme).searchButton}
+                onPress={() => setIsSearchModalOpen(true)}
+                accessibilityLabel="Open search"
+              >
+                <Ionicons name="search" size={20} color={theme.text} />
+                <Text style={styles(theme).searchButtonText}>
+                  Search todos...
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles(theme).taskListFilterContainer}>
+              <TouchableOpacity
+                style={[
+                  styles(theme).taskListFilterButton,
+                  taskListFilter === "all" &&
+                    styles(theme).activeTaskListFilter,
+                ]}
+                onPress={() => setTaskListFilter("all")}
+              >
+                <Text
+                  style={[
+                    styles(theme).taskListFilterText,
+                    taskListFilter === "all" &&
+                      styles(theme).activeTaskListFilterText,
+                  ]}
+                >
+                  All
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles(theme).taskListFilterButton,
+                  taskListFilter === "today" &&
+                    styles(theme).activeTaskListFilter,
+                ]}
+                onPress={() => setTaskListFilter("today")}
+              >
+                <Text
+                  style={[
+                    styles(theme).taskListFilterText,
+                    taskListFilter === "today" &&
+                      styles(theme).activeTaskListFilterText,
+                  ]}
+                >
+                  Today
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles(theme).taskListFilterButton,
+                  taskListFilter === "upcoming" &&
+                    styles(theme).activeTaskListFilter,
+                ]}
+                onPress={() => setTaskListFilter("upcoming")}
+              >
+                <Text
+                  style={[
+                    styles(theme).taskListFilterText,
+                    taskListFilter === "upcoming" &&
+                      styles(theme).activeTaskListFilterText,
+                  ]}
+                >
+                  Upcoming
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles(theme).taskListFilterButton,
+                  taskListFilter === "past" &&
+                    styles(theme).activeTaskListFilter,
+                ]}
+                onPress={() => setTaskListFilter("past")}
+              >
+                <Text
+                  style={[
+                    styles(theme).taskListFilterText,
+                    taskListFilter === "past" &&
+                      styles(theme).activeTaskListFilterText,
+                  ]}
+                >
+                  Past
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView
+              style={styles(theme).taskListScrollView}
+              showsVerticalScrollIndicator={false}
+              onScrollBeginDrag={() => animateFab(0.8)}
+              onScrollEndDrag={() => animateFab(1)}
+            >
+              {allTasksList.length > 0 ? (
+                allTasksList.map((todo) => renderTaskItem(todo))
+              ) : (
+                <Text style={styles(theme).emptyTaskList}>
+                  No tasks found. Add a new task to get started!
+                </Text>
+              )}
+              <View style={{ height: 80 }} />
+            </ScrollView>
           </View>
-
-          <Text style={styles(theme).weekText}>
-            {format(startOfWeek(currentDate, { weekStartsOn: 1 }), "MMM d")} -{" "}
-            {format(endOfWeek(currentDate, { weekStartsOn: 1 }), "MMM d, yyyy")}
-          </Text>
-
-          <View style={styles(theme).filterContainer}>
-            <FilterButton
-              label="All"
-              isActive={filter === "All"}
-              onPress={() => setFilter("All")}
-            />
-            <FilterButton
-              label="Incomplete"
-              isActive={filter === "Incomplete"}
-              onPress={() => setFilter("Incomplete")}
-            />
-            <FilterButton
-              label="Completed"
-              isActive={filter === "Completed"}
-              onPress={() => setFilter("Completed")}
-            />
-          </View>
-
-          {sections.map((section) => (
-            <DaySection
-              key={section.day}
-              day={section.day}
-              date={section.date}
-              todos={section.todos}
-              expanded={section.expanded}
-              onToggle={() => toggleSection(section.day)}
-              onEdit={openEditModal}
-              onDelete={openDeleteModal}
-              onToggleTodo={toggleTodo}
-            />
-          ))}
-
-          <View style={{ height: 80 }} />
-        </ScrollView>
+        )}
 
         <Animated.View
           style={[
@@ -2390,5 +2711,125 @@ const styles = (theme: any) =>
       color: theme.card,
       fontSize: 10,
       fontWeight: "bold",
+    },
+    // New styles for task list view
+    viewModeToggleContainer: {
+      flexDirection: "row",
+      backgroundColor: theme.card,
+      borderRadius: 16,
+      margin: 16,
+      marginBottom: 0,
+      overflow: "hidden",
+      shadowColor: "#000",
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.1,
+      shadowRadius: 4,
+      elevation: 3,
+    },
+    viewModeButton: {
+      flex: 1,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      paddingVertical: 12,
+      paddingHorizontal: 16,
+    },
+    activeViewModeButton: {
+      backgroundColor: theme.primary,
+    },
+    viewModeButtonText: {
+      color: theme.text,
+      fontWeight: "600",
+      marginLeft: 8,
+    },
+    activeViewModeButtonText: {
+      color: theme.card,
+    },
+    taskListContainer: {
+      flex: 1,
+      padding: 16,
+    },
+    taskListHeader: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+      marginBottom: 16,
+    },
+    taskListTitle: {
+      fontSize: 20,
+      fontWeight: "bold",
+      color: theme.text,
+    },
+    taskListFilterContainer: {
+      flexDirection: "row",
+      backgroundColor: theme.card,
+      borderRadius: 16,
+      marginBottom: 16,
+      shadowColor: "#000",
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.1,
+      shadowRadius: 4,
+      elevation: 3,
+    },
+    taskListFilterButton: {
+      flex: 1,
+      paddingVertical: 10,
+      paddingHorizontal: 4,
+      alignItems: "center",
+    },
+    activeTaskListFilter: {
+      backgroundColor: theme.primary,
+      borderRadius: 12,
+    },
+    taskListFilterText: {
+      color: theme.text,
+      fontWeight: "500",
+      fontSize: 13,
+    },
+    activeTaskListFilterText: {
+      color: theme.card,
+    },
+    taskListScrollView: {
+      flex: 1,
+    },
+    taskListItem: {
+      flexDirection: "row",
+      alignItems: "center",
+      padding: 16,
+      backgroundColor: theme.card,
+      borderRadius: 16,
+      marginBottom: 12,
+      shadowColor: "#000",
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.1,
+      shadowRadius: 4,
+      elevation: 2,
+    },
+    taskListTextContainer: {
+      flex: 1,
+      marginLeft: 12,
+    },
+    taskListMetaContainer: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      alignItems: "center",
+      marginTop: 4,
+    },
+    taskListDay: {
+      fontSize: 12,
+      color: theme.primary,
+      fontWeight: "600",
+      marginRight: 8,
+    },
+    taskListDate: {
+      fontSize: 12,
+      color: theme.secondaryText,
+    },
+    emptyTaskList: {
+      color: theme.secondaryText,
+      fontSize: 16,
+      textAlign: "center",
+      marginTop: 40,
+      fontStyle: "italic",
     },
   });

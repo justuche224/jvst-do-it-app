@@ -598,6 +598,13 @@ export default function TodoApp() {
             >
               <Ionicons name="chevron-back" size={24} color={theme.primary} />
             </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.navigationButton}
+              onPress={() => setIsSearchModalOpen(true)}
+              accessibilityLabel="Open search"
+            >
+              <Ionicons name="search" size={24} color={theme.primary} />
+            </TouchableOpacity>
             <Text style={styles.weekText}>
               {format(startOfWeek(currentDate, { weekStartsOn: 1 }), "MMM d")} -{" "}
               {format(
@@ -615,13 +622,6 @@ export default function TodoApp() {
                 size={24}
                 color={theme.primary}
               />
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.navigationButton}
-              onPress={() => setIsSearchModalOpen(true)}
-              accessibilityLabel="Open search"
-            >
-              <Ionicons name="search" size={24} color={theme.primary} />
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.navigationButton}

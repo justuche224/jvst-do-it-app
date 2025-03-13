@@ -44,6 +44,7 @@ import {
 } from "date-fns";
 import { Ionicons } from "@expo/vector-icons";
 import { SafeAreaView } from "react-native-safe-area-context";
+import * as Haptics from "expo-haptics";
 import * as Notifications from "expo-notifications";
 import { SchedulableTriggerInputTypes } from "expo-notifications";
 import { BlurView } from "expo-blur";
@@ -267,6 +268,31 @@ function TodoAppContent() {
     "all" | "today" | "upcoming" | "past"
   >("all");
 
+  useEffect(() => {
+    const loadViewMode = async () => {
+      try {
+        const savedViewMode = await AsyncStorage.getItem("viewMode");
+        if (savedViewMode) {
+          setViewMode(savedViewMode as "calendar" | "list");
+        }
+      } catch (error) {
+        console.error("Failed to load view mode preference", error);
+      }
+    };
+    loadViewMode();
+  }, []);
+
+  useEffect(() => {
+    const saveViewMode = async () => {
+      try {
+        await AsyncStorage.setItem("viewMode", viewMode);
+      } catch (error) {
+        console.error("Failed to save view mode preference", error);
+      }
+    };
+    saveViewMode();
+  }, [viewMode]);
+
   // Animation values
   const fabAnim = useRef(new Animated.Value(1)).current;
   const modalAnim = useRef(new Animated.Value(0)).current;
@@ -314,6 +340,7 @@ function TodoAppContent() {
   }, [todos, taskListFilter]);
 
   const handleResultClick = (todo: Todo) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     // Animate search closing
     Animated.timing(searchInputAnim, {
       toValue: 0,
@@ -448,6 +475,7 @@ function TodoAppContent() {
 
   const addTodo = async () => {
     if (newTodo.trim()) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       const todoDate = getDateForDay(selectedDay);
       const fullDate = new Date(todoDate);
       fullDate.setHours(
@@ -532,6 +560,7 @@ function TodoAppContent() {
   };
 
   const toggleTodo = async (todoId: string, dateStr: string) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     let updatedTodos = todos;
     for (let i = 0; i < updatedTodos.length; i++) {
       const todo = updatedTodos[i];
@@ -582,6 +611,7 @@ function TodoAppContent() {
   };
 
   const editTodo = async (id: string, newText: string, newDay: string) => {
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     const prevTodo = todos.find((t) => t.id === id);
     if (!prevTodo) return;
 
@@ -689,6 +719,7 @@ function TodoAppContent() {
   };
 
   const changeWeek = (direction: "prev" | "next") => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     // Animate week change
     const initialValue = direction === "prev" ? -0.3 : 0.3;
     const slideAnim = new Animated.Value(initialValue);
@@ -719,6 +750,7 @@ function TodoAppContent() {
     setShowDatePicker(false);
 
     if (selectedDate) {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       setCalendarDate(selectedDate);
       setCurrentDate(selectedDate);
 
@@ -748,6 +780,7 @@ function TodoAppContent() {
   };
 
   const toggleSection = (day: string) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     // Enhanced animation for section toggle
     LayoutAnimation.configureNext(
       LayoutAnimation.create(
@@ -767,12 +800,14 @@ function TodoAppContent() {
   };
 
   const openDeleteModal = (todo: Todo) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setTodoToDelete(todo);
     setIsDeleteModalOpen(true);
   };
 
   const confirmDelete = async () => {
     if (todoToDelete) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
       if (todoToDelete.notificationId) {
         await Notifications.cancelScheduledNotificationAsync(
           todoToDelete.notificationId
@@ -806,6 +841,7 @@ function TodoAppContent() {
   };
 
   const openEditModal = (todo: Todo) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setTodoToEdit(todo);
     setEditText(todo.text);
     setEditDay(todo.day);
@@ -824,6 +860,7 @@ function TodoAppContent() {
 
   // Toggle view mode
   const toggleViewMode = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     LayoutAnimation.configureNext(
       LayoutAnimation.create(
         300,
@@ -1255,6 +1292,7 @@ function TodoAppContent() {
           <TouchableOpacity
             style={styles(theme).fab}
             onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
               const today = new Date();
               const todayIndex = getDay(today);
               const adjustedIndex = todayIndex === 0 ? 6 : todayIndex - 1;

@@ -262,7 +262,6 @@ function TodoAppContent() {
   const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
 
-  // New state for view mode
   const [viewMode, setViewMode] = useState<"calendar" | "list">("calendar");
   const [taskListFilter, setTaskListFilter] = useState<
     "all" | "today" | "upcoming" | "past"
